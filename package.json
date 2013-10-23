@@ -1,0 +1,28 @@
+{
+  "name": "hpka",
+  "version": "0.1.0",
+  "description": "An Express.js middleware that enables HPKA into your app",
+  "main": "hpka.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tashweesh/node-hpka.git"
+  },
+  "keywords": [
+    "HTTP",
+    "public",
+    "key",
+    "authentication",
+    "HPKA"
+  ],
+  "author": "BatikhSouri",
+  "license": "GPLv2",
+  "bugs": {
+    "url": "https://github.com/Tashweesh/node-hpka/issues"
+  },
+  "dependencies": {
+    "cryptopp": "~0.1.2"
+  }
+}
