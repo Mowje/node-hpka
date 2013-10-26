@@ -1,5 +1,6 @@
 var cryptopp = require('cryptopp');
 var Buffer = require('buffer').Buffer;
+var http = require('http');
 
 var getCurveID = function(curveName){
 	//Prime curves
@@ -117,7 +118,6 @@ var processReqBlob = function(pubKeyBlob){
 		//Reading the x and y coordinates of the public point
 		var publicPtXLength = buf.readUInt16BE(byteIndex);
 		byteIndex += 2;
-		var publicElement = {};
 		var xVal, yVal;
 		xVal = buf.toString('hex', byteIndex, byteIndex + publicPtXLength);
 		byteIndex += publicPtXLength;
@@ -288,3 +288,246 @@ exports.middleware = function(loginCheck, registration){
 	};
 	return middlewareFunction;
 };
+
+exports.createClientKey = function(filename, keyType, options){
+	if (!(keyType == 'ecdsa' || keyType == 'dsa' || keyType == 'rsa')) throw new TypeError("Invalid key type. Must be either 'ecdsa', 'dsa' or 'rsa'");
+	var keyPair;
+	if (keyType == 'ecdsa'){
+		//Options should be the curve name;
+		var curveId = getCurveID(options);
+		if (curveId >= 0x80) {
+			//Binary curves not supported yet by node-cryptopp
+			throw new TypeError('Unsupported curve');
+		} else {
+			keyPair = cryptopp.ecdsa.prime.generateKeyPair(curveId);
+		}
+	} else if (keyType == 'rsa'){
+		//Options should be key size
+		var keySize = Number(options);
+		if (Number.isNaN(keySize)) throw new TypeError('Invalid key size');
+		keyPair = cryptopp.rsa.generateKeyPair(keySize);
+	} else { //DSA case
+		//Options should be key size
+		var keySize = Number(options);
+		if (Number.isNaN(keySize)) throw new TypeError('Invalid key size');
+		keyPair = cryptopp.dsa.generateKeyPair(keySize);
+	}
+	saveKeyPair(filename, keyPair);
+}
+
+exports.client = function(keyFilename){
+	var keyPair = loadKeyPair(keyFilename);
+	if (!keyPair) throw new TypeError("Invalid key file");
+	this.request = function(options, body, callback){
+		if (!options.headers) options.headers = {};
+		//options.headers["HPKA-Req"]
+		//options.headers["HPKA-Signature"]
+		var req = http.request(options, function(res){
+			callback(res);
+		});
+		if (body) req.write(body);
+		req.end();
+	};
+};
+
+function loadKeyPair(filename){
+	var fileBuffer = fs.readFileSync(filename);
+	if (!fileBuffer) throw new TypeError("File not found");
+	var offset = 3;
+	var keyHeader = "";
+	for (var i = 0; i < 3; i++){
+		keyHeader += fileBuffer[i];
+	}
+	if (keyHeader != "key") throw new TypeError("Invalid key file");
+	var keyPair = {};
+	var keyType = fileBuffer[offset];
+	offset++;
+	if (keyType == 0x00){ //ECDSA
+		keyPair.keyType = "ecdsa";
+		//Reading the curveId, then getting the curve name
+		var curveID = fileBuffer[offset];
+		offset++;
+		var curveName = getCurveName(curveID);
+		//Reading publicPoint.x
+		var publicPtXLength = fileBuffer.readUInt16BE(offset);
+		offset += 2;
+		var xVal = fileBuffer.toString('ascii', offset, offset + publicPtXLength);
+		offset += publicPtXLength;
+		//Reading publicPoint.y
+		var publicPtYLength = fileBuffer.readUInt16BE(offset);
+		offset += 2;
+		var yVal = fileBuffer.toString('ascii', offset, offset + publicPtYLength);
+		offset += publicPtYLength;
+		//Reading the privateKey
+		var privateKeyLength = fileBuffer.readUInt16BE(offset);
+		offset += 2;
+		var privateKey = fileBuffer.toString('ascii', offset, offset + privateKeyLength);
+		offset += privateKeyLength;
+		//Setting keyPair attributes
+		keyPair.curveName = curveName;
+		keyPair.publicKey = {};
+		keyPair.publicKey.x = xVal;
+		keyPair.publicKey.y = yVal;
+		keyPair.privateKey = privateKey;
+	} else if (keyType == 0x01){ //RSA
+		keyPair.keyType = "rsa";
+		//Reading the modulus
+		var modulusLength = fileBuffer.readUInt16BE(offset);
+		offset += 2;
+		var modulus = fileBuffer.toString('ascii', offset, offset + modulusLength);
+		offset += modulusLength;
+		//Reading the public exponent
+		var publicExpLength = fileBuffer.readUInt16BE(offset);
+		offset += 2;
+		var publicExponent = fileBuffer.toString('ascii', offset, offset + publicExpLength);
+		offset += publicExpLength;
+		//Reading the private exponent
+		var privateKeyLength = fileBuffer.readUInt16BE(offset);
+		offset += 2;
+		var privateExponent = fileBuffer.toString('ascii', offset, offset + privateKeyLength);
+		offset += privateKeyLength;
+		//Setting keyPair attributes
+		keyPair.modulus = modulus;
+		keyPair.publicExponent = publicExponent;
+		keyPair.privateExponent = privateExponent;
+	} else if (keyType == 0x02){ //DSA
+		keyPair.keyType = "dsa";
+		//Reading the prime field
+		var primeFieldLength = fileBuffer.readUInt16BE(offset);
+		offset += 2;
+		var primeField = fileBuffer.toString('ascii', offset, offset + primeFieldLength);
+		offset += primeFieldLength;
+		//Reading the divider
+		var dividerLength = fileBuffer.readUInt16BE(offset);
+		offset += 2;
+		var divider = fileBuffer.toString('ascii', offset, offset + dividerLength);
+		offset += dividerLength;
+		//Reading the base
+		var baseLength = fileBuffer.readUInt16BE(offset);
+		offset += 2;
+		var base = fileBuffer.toString('ascii', offset, offset + baseLength);
+		offset += baseLength;
+		//Reading the public element
+		var publicElementLength = fileBuffer.readUInt16BE(offset);
+		offset += 2;
+		var publicElement = fileBuffer.toString('ascii', offset, offset + publicElementLength);
+		offset += publicElementLength;
+		//Reading the private exponent
+		var privateKeyLength = fileBuffer.readUInt16BE(offset);
+		offset += 2;
+		var privateKey = fileBuffer.toString('ascii', offset, offset + privateKeyLength);
+		offset += privateKeyLength;
+		//Writing the keyPair attributes
+		keyPair.primeField = primeField;
+		keyPair.divider = divider;
+		keyPair.base = base;
+		keyPair.publicElement = publicElement;
+		keyPair.privateExponent = privateKey;
+	} else throw new TypeError("Invalid key type");
+	return keyPair;
+}
+
+function saveKeyPair(filename, keyPair){
+	var offset = 0;
+	var buffer;
+	var bufferLength = 3; //3 for the first letters "key" in the file
+	var keyType = keyPair.keyType;
+	if (!(keyType == 'ecdsa' || keyType == 'dsa' || keyType == 'rsa')) throw new TypeError("Invalid key type. Must be either 'ecdsa', 'dsa' or 'rsa'");
+	if (keyType == 'ecdsa'){
+		if (!(keyPair.curveName && keyPair.publicKey && keyPair.publicKey.x && keyPair.publicKey.y && keyPair.privateKey)) throw new TypeError("Missing parameters");
+		var curveID = getCurveID(keyPair.curveName);
+		bufferLength += 1; //One byte for key type
+		bufferLength += 1; //One byte for curveID
+		bufferLength += 2 + keyPair.publicKey.x.length; //The number of bytes for the x coordinate of the public key
+		bufferLength += 2 + keyPair.publicKey.y.length; //Same here for y coordinate
+		bufferLength += 2 + keyPair.privateKey.length; //Same for the the private key
+		buffer = new Buffer(bufferLength);
+		//Writing the dummy header of I don't know what
+		buffer.write("key", offset, 3);
+		offset += 3;
+		//Writing the key type
+		buffer.writeUInt8(0x00, offset);
+		offset++;
+		//Writing the curveID
+		buffer.writeUInt8(curveID, offset);
+		offset++;
+		//Writing publicKey.x's length followed by publicKey.x 
+		buffer.writeUInt16BE(keyPair.publicKey.x.length, offset);
+		offset += 2;
+		buffer.write(keyPair.publicKey.x, offset, keyPair.publicKey.x.length);
+		offset += keyPair.publicKey.x.length;
+		//Same here for publicKey.y
+		buffer.writeUInt16BE(keyPair.publicKey.y.length, offset);
+		offset += 2;
+		buffer.write(keyPair.publicKey.y, offset, keyPair.publicKey.y.length);
+		offset += keyPair.publicKey.y.length;
+		//Same here for privateKey
+		buffer.writeUInt16BE(keyPair.privateKey.length, offset);
+		offset += 2;
+		buffer.write(keyPair.privateKey, offset, keyPair.privateKey.length);
+		buffer += keyPair.privateKey.length;
+	} else if (keyType == 'rsa'){
+		if (!(keyPair.modulus && keyPair.publicExponent && keyPair.privateExponent)) throw new TypeError("Missing parameters");
+		bufferLength += 1: //One byte for the key type
+		bufferLength += 2 + keyPair.modulus.length;
+		bufferLength += 2 + keyPair.publicExponent.length;
+		bufferLength += 2 + keyPair.privateExponent.length;
+		buffer = new Buffer(bufferLength);
+		//Writing a dummy header
+		buffer.write("key", offset, 3);
+		offset += 3;
+		//Writing the modulus
+		buffer.writeUInt16BE(keyPair.modulus.length, offset);
+		offset += 2;
+		buffer.write(keyPair.modulus, offset, keyPair.modulus.length);
+		offset += keyPair.modulus.length;
+		//Writing the public exponent
+		buffer.writeUInt16BE(keyPair.publicExponent.length, offset);
+		offset += 2;
+		buffer.write(keyPair.publicExponent, offset, keyPair.publicExponent.length);
+		offset += keyPair.publicExponent.length;
+		//Writing the private exponent
+		buffer.writeUInt16BE(keyPair.privateExponent.length, offset);
+		offset += 2;
+		buffer.write(keyPair.privateExponent, offset, keyPair.privateExponent.length);
+		offset += keyPair.privateExponent.length;
+	} else { //DSA case
+		if (!(keyPair.primeField && keyPair.divider && keyPair.base && keyPair.publicElement && keyPair.privateKey)) throw new TypeError("Missing parameters");
+		bufferLength += 1; //One byte for the key type;
+		bufferLength += 2 + keyPair.primeField.length;
+		bufferLength += 2 + keyPair.divider.length;
+		bufferLength += 2 + keyPair.base.length;
+		bufferLength += 2 + keyPair.publicElement.length;
+		bufferLength += 2 + keyPair.privateKey.length;
+		buffer = new Buffer(bufferLength);
+		//Writing a dummy header
+		buffer.write("key", offset, 3);
+		offset += 3;
+		//Writing the prime field
+		buffer.writeUInt16BE(keyPair.primeField.length, offset);
+		offset += 2;
+		buffer.write(keyPair.primeField, offset, keyPair.primeField.length);
+		offset += keyPair.primeField.length;
+		//Writing the divider
+		buffer.writeUInt16BE(keyPair.divider.length, offset);
+		offset += 2;
+		buffer.write(keyPair.divider, offset, keyPair.divider.length);
+		offset += keyPair.divider.length;
+		//Writing the base
+		buffer.writeUInt16BE(keyPair.base.length, offset);
+		offset += 2;
+		buffer.write(keyPair.base, offset, keyPair.base.length);
+		offset += keyPair.base.length;
+		//Writing the public element
+		buffer.writeUInt16BE(keyPair.publicElement.length, offset);
+		offset += 2;
+		buffer.write(keyPair.publicElement, offset, keyPair.publicElement.length);
+		offset += keyPair.publicElement.length;
+		//Writing the private key
+		buffer.writeUInt16BE(keyPair.privateKey.length, offset);
+		offset += 2;
+		buffer.write(keyPair.privateKey, offset, keyPair.privateKey.length);
+		offset += keyPair.privateKey.length;
+	}
+	fs.writeFileSync(filename, buffer);
+}
