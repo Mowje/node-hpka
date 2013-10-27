@@ -289,6 +289,29 @@ exports.middleware = function(loginCheck, registration){
 	return middlewareFunction;
 };
 
+exports.httpMiddleware = function(requestHandler, loginCheck, registration){
+	if (!(typeof requestHandler == 'function' && typeof loginCheck == 'function' && typeof registration == 'function')) throw new TypeError('requestHandler, loginCheck and registration must all be functions');
+	var middleware = function(req, res){
+		if (req.headers['HPKA-Req'] && req.headers['HPKA-Signature']){
+			console.log('HPKA headers found');
+			try {
+				var HPKAReqBlob = req.headers['HPKA-Req'], HPKASignature = req.headers['HPKA-Signature'];
+				var HPKAReq = processReqBlob(HPKAReqBlob);
+			} catch (e){
+				console.log('error : ' + JSON.stringify(e));
+				res.writeHead(445, {'Content-Type': 'text/plain'});
+				res.write('Invalid signature');
+				res.end();
+				return;
+			}
+		} else {
+			console.log('HPKA headers not found');
+			res.setHeader('HPKA-Available', '1');
+			requestHandler(req, res);
+		}
+	};
+}
+
 exports.createClientKey = function(filename, keyType, options){
 	if (!(keyType == 'ecdsa' || keyType == 'dsa' || keyType == 'rsa')) throw new TypeError("Invalid key type. Must be either 'ecdsa', 'dsa' or 'rsa'");
 	var keyPair;
