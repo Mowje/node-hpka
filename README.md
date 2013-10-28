@@ -19,7 +19,7 @@ This module depends on [node-cryptopp](https://github.com/Tashweesh/node-crytopp
 
 As said above, this module as of now acts as a express middleware. The module exposes 2 methods :
 
-**```hpka.middleware(loginCheck, registration)```**: the middleware builder. The two parameters are functions, that aew called once the signature of the request is verified (with the public key attached to it). These functions are called to do the additional handling (like checking the DB for the right public key or register the new user) before handing the request to the correct route. These functions will receive the following parameters:
+**```hpka.middleware(loginCheck, registration, strict)```**: the middleware builder. The two parameters are functions, that aew called once the signature of the request is verified (with the public key attached to it). These functions are called to do the additional handling (like checking the DB for the right public key or register the new user) before handing the request to the correct route. These functions will receive the following parameters:
 
 * loginCheck(HPKAReq, res, callback(Boolean)) :
 	* HPKAReq : the HPKAReq object, as descibed below
@@ -28,13 +28,14 @@ As said above, this module as of now acts as a express middleware. The module ex
 * registration(HPKAReq, res) :
 	* HPKAReq : the HPKAReq object, as described below
 	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, to show a welcome page (or back to the site's homepage).
+* strict : must be a boolean when defined. Defines whether it shows error message when there is a problem, or just renders the page while ignoring the authentication request. Note that this applies to all error types except a "unavailable username" error
 	
 Note that :
 
 * you must use either ```res``` or ```callback``` in loginCheck
 * but you **must** use ```res``` in registration
 
-**```hpka.verifySignature(reqBlob, signature, callback(isValid, username, HPKAReq))```**: checks the signature of a HPKA request. To be used if you choose to manage signature verification by yourself
+**```hpka.verifySignature(reqBlob, signature, callback(isValid, username, HPKAReq))```**: checks the signature of a HPKA request. To be used if you choose to manage signature verification and actionType handling by yourself
 
 * reqBlob : the content of the "HPKA-Req" header
 * signature : the content of the "HPKA-Signature" header
@@ -76,6 +77,7 @@ The HPKAReq object is the result of parsing the [HPKA-Req field](https://github.
 			//Save the details from HPKAReq
 			//Use res to show welcome page
 		},
+		true
 	);
 
 #### Where to load the expressjs middleware?

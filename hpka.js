@@ -213,8 +213,9 @@ exports.verifySignature = verifySignature;
 	keyRotation: function(HPKAReq, RotationReq) // for upcoming versions
 }
 */
-exports.middleware = function(loginCheck, registration){
+exports.middleware = function(loginCheck, registration, strict){
 	if (!(typeof loginCheck == 'function' && typeof registration == 'function')) throw new TypeError('loginCheck and registration parameters must be event handlers (ie, functions)');
+	if (!(typeof strict == 'undefined' || typeof strict == 'boolean')) throw new TypeError("When 'strict' is defined, it must be a boolean");
 	var middlewareFunction = function(req, res, next){
 		if (req.get('HPKA-Req') && req.get("HPKA-Signature")){
 			console.log('HPKA Headers found');
@@ -224,9 +225,13 @@ exports.middleware = function(loginCheck, registration){
 				try {
 					HPKAReq = processReqBlob(HPKAReqBlob);
 				} catch (e){
-					console.log('HPKA-Req parsing issue');
-					res.status(445).set('HPKA-Error', '1');
-					res.send('Malformed HPKA request');
+					console.log('HPKA-Req parsing issue; e : ' + JSON.stringify(e));
+					if (strict){
+						res.status(445).set('HPKA-Error', '1');
+						res.send('Malformed HPKA request');
+					} else {
+						next();
+					}
 					return;
 				}
 				try {
@@ -239,12 +244,19 @@ exports.middleware = function(loginCheck, registration){
 								//Check that the user is registered and the public key valid
 								console.log('Calling login handler');
 								loginCheck(HPKAReq, res, function(isKeyValid){
+									console.log('Is key valid : ' + isKeyValid);
 									if (isKeyValid){
 										req.username = HPKAReq.username;
 										req.hpkareq = HPKAReq;
+										next();
+									} else {
+										if (strict){
+											res.status(445).set('HPKA-Error', '3');
+											res.send('Invalid public key');
+										} else {
+											next();
+										}
 									}
-									console.log('Is key valid : ' + isKeyValid);
-									next();
 								});
 								return;
 							} else if (HPKAReq.actionType == 1){
@@ -267,13 +279,22 @@ exports.middleware = function(loginCheck, registration){
 							}
 						} else {
 							console.log('Invalid signature : ' + JSON.stringify(HPKAReq));
-							next();
+							if (strict){
+								res.status(445).set('HPKA-Error', '2');
+								res.send('Invalid signature');
+							} else {
+								next();
+							}
 						}
 					});
 				} catch (e){
 					console.log('error : ' + JSON.stringify(e));
-					res.status(445).set('HPKA-Error', '2');
-					res.send('Invalid signature');
+					if (strict){
+						res.status(445).set('HPKA-Error', '2');
+						res.send('Invalid signature');
+					} else {
+						next();
+					}
 					return;
 				}
 			} catch (e){
@@ -289,20 +310,44 @@ exports.middleware = function(loginCheck, registration){
 	return middlewareFunction;
 };
 
-exports.httpMiddleware = function(requestHandler, loginCheck, registration){
+exports.httpMiddleware = function(requestHandler, loginCheck, registration, strict){
 	if (!(typeof requestHandler == 'function' && typeof loginCheck == 'function' && typeof registration == 'function')) throw new TypeError('requestHandler, loginCheck and registration must all be functions');
+	if (!(typeof strict == 'undefined' || typeof strict == 'boolean')) throw new TypeError("When 'strict' is defined, it must be a boolean");
 	var middleware = function(req, res){
 		if (req.headers['HPKA-Req'] && req.headers['HPKA-Signature']){
 			console.log('HPKA headers found');
 			try {
 				var HPKAReqBlob = req.headers['HPKA-Req'], HPKASignature = req.headers['HPKA-Signature'];
-				var HPKAReq = processReqBlob(HPKAReqBlob);
+				var HPKAReq;
+				//Parsing the request
+				try {
+					HPKAReq = processReqBlob(HPKAReqBlob);
+				} catch (e){
+					writeErrorRes(res, 'HPKA-Req parsing error', 1);
+					return;
+					/*res.writeHead(445, {'Content-Type': 'text/plain', 'HPKA-Req': '1'});
+					res.write('HPKA-Req parsing issue');*/
+				}
+				//Checking the signature then calling the handlers according to the actionType
+				try {
+					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, HPKASignature, function(isValid)){
+						if (isValid){
+
+						} else {
+
+						}
+					}
+				} catch (e){
+					console.log('error : ' + JSON.stringify(e));
+					writeErrorRes(res, 'Invalid signature', 2);
+					/*res.writeHead(445, {'Content-Type': 'text/plain', 'HPKA-Error': '2'});
+					res.write('Invalid signature');
+					res.end();*/
+					return;
+				}
 			} catch (e){
 				console.log('error : ' + JSON.stringify(e));
-				res.writeHead(445, {'Content-Type': 'text/plain'});
-				res.write('Invalid signature');
-				res.end();
-				return;
+				requestHandler(req, res);
 			}
 		} else {
 			console.log('HPKA headers not found');
@@ -310,6 +355,11 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration){
 			requestHandler(req, res);
 		}
 	};
+	function writeErrorRes(res, message, errorCode){
+		res.writeHead(445, {'Content-Type': 'text/plain', 'Content-Length': message.length.toString(), 'HPKA-Error': errorCode.toString()});
+		res.write(message);
+		res.end();
+	}
 }
 
 exports.createClientKey = function(filename, keyType, options){
@@ -345,6 +395,9 @@ exports.client = function(keyFilename){
 		if (!options.headers) options.headers = {};
 		//options.headers["HPKA-Req"]
 		//options.headers["HPKA-Signature"]
+		/*
+			BUILDING THE PAYLOAD
+		*/
 		var req = http.request(options, function(res){
 			callback(res);
 		});
