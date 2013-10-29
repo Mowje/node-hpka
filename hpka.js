@@ -78,6 +78,10 @@ var getCurveName = function(curveID){
 	else return undefined;
 };
 
+/*
+* SERVER METHODS
+*/
+
 //Extracting all request details from the blob. Cf HPKA spec
 var processReqBlob = function(pubKeyBlob){
 	var buf = new Buffer(pubKeyBlob, 'base64');
@@ -203,6 +207,7 @@ var verifySignature = function(reqBlob, signature, callback){
 
 exports.verifySignature = verifySignature;
 
+//Expressjs middlware builder
 /* Config object signature
 {
 	loginCheck: function(HPKAReq, res, callback(isValid)),
@@ -237,14 +242,14 @@ exports.middleware = function(loginCheck, registration, strict){
 				try {
 					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, HPKASignature, function(isValid){
 						if (isValid){
-							console.log('actionType : ' + HPKAReq.actionType);
-							console.log('Username : ' + HPKAReq.username);
+							//console.log('actionType : ' + HPKAReq.actionType);
+							//console.log('Username : ' + HPKAReq.username);
 							if (HPKAReq.actionType == 0){
 								//Authentified HTTP request
 								//Check that the user is registered and the public key valid
-								console.log('Calling login handler');
+								//console.log('Calling login handler');
 								loginCheck(HPKAReq, res, function(isKeyValid){
-									console.log('Is key valid : ' + isKeyValid);
+									//console.log('Is key valid : ' + isKeyValid);
 									if (isKeyValid){
 										req.username = HPKAReq.username;
 										req.hpkareq = HPKAReq;
@@ -261,7 +266,7 @@ exports.middleware = function(loginCheck, registration, strict){
 								return;
 							} else if (HPKAReq.actionType == 1){
 								//Registration
-								console.log('Calling registration handler');
+								//console.log('Calling registration handler');
 								registration(HPKAReq, res);
 								return;
 							} else {
@@ -270,7 +275,7 @@ exports.middleware = function(loginCheck, registration, strict){
 									//Invalid action types
 									res.set('HPKA-Error', '8');
 									res.send('Unknown action type. What the hell are you doing?'); 
-									console.log("Unknown action type : " + HPKAReq.actionTyp );
+									//console.log("Unknown action type : " + HPKAReq.actionTyp );
 								} else {
 									//Valid action type, but not implemented here yet
 									res.set('HPKA-Error', '7');
@@ -278,7 +283,7 @@ exports.middleware = function(loginCheck, registration, strict){
 								}
 							}
 						} else {
-							console.log('Invalid signature : ' + JSON.stringify(HPKAReq));
+							//console.log('Invalid signature : ' + JSON.stringify(HPKAReq));
 							if (strict){
 								res.status(445).set('HPKA-Error', '2');
 								res.send('Invalid signature');
@@ -310,9 +315,15 @@ exports.middleware = function(loginCheck, registration, strict){
 	return middlewareFunction;
 };
 
+//Standard HTTP middlware builder
 exports.httpMiddleware = function(requestHandler, loginCheck, registration, strict){
 	if (!(typeof requestHandler == 'function' && typeof loginCheck == 'function' && typeof registration == 'function')) throw new TypeError('requestHandler, loginCheck and registration must all be functions');
 	if (!(typeof strict == 'undefined' || typeof strict == 'boolean')) throw new TypeError("When 'strict' is defined, it must be a boolean");
+	function writeErrorRes(res, message, errorCode){
+		res.writeHead(445, {'Content-Type': 'text/plain', 'Content-Length': message.length.toString(), 'HPKA-Error': errorCode.toString()});
+		res.write(message);
+		res.end();
+	}
 	var middleware = function(req, res){
 		if (req.headers['HPKA-Req'] && req.headers['HPKA-Signature']){
 			console.log('HPKA headers found');
@@ -325,24 +336,48 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, stri
 				} catch (e){
 					writeErrorRes(res, 'HPKA-Req parsing error', 1);
 					return;
-					/*res.writeHead(445, {'Content-Type': 'text/plain', 'HPKA-Req': '1'});
-					res.write('HPKA-Req parsing issue');*/
 				}
 				//Checking the signature then calling the handlers according to the actionType
 				try {
 					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, HPKASignature, function(isValid)){
 						if (isValid){
-
+							//Checking the action type and calling the right handlers
+							if (HPKAReq.actionType == 0x00){ //Authenticated HTTP request
+								loginCheck(HPKAReq, res, function(isValid)){
+									if (isValid){
+										req.username = HPKAReq.username;
+										req.hpkareq = HPKAReq;
+									} else {
+										if (strict){
+											writeErrorRes(res, 'Invalid key', 3);
+										} else {
+											requestHandler(req, res);
+										}
+									}
+								});
+							} else if (HPKAReq.actionType == 0x01){ //Registration request
+								registration(HPKAReq, res);
+								return;
+							} else {
+								if (Number(HPKAReq.actionType) < 0 || Number(HPKAReq.actionType) > 4){
+									//Unknown actionType
+									writeErrorRes(res, 'Invald actionType', 8);
+								} else {
+									//Unsupported actionType as of now
+									writeErrorRes(res, 'Unsupported actionType', 7);
+								}
+							}
 						} else {
-
+							if (strict){
+								writeErrorRes(res, 'Invalid signature', 2);
+							} else {
+								requestHandler(req, res);
+							}
 						}
 					}
 				} catch (e){
 					console.log('error : ' + JSON.stringify(e));
 					writeErrorRes(res, 'Invalid signature', 2);
-					/*res.writeHead(445, {'Content-Type': 'text/plain', 'HPKA-Error': '2'});
-					res.write('Invalid signature');
-					res.end();*/
 					return;
 				}
 			} catch (e){
@@ -355,13 +390,13 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, stri
 			requestHandler(req, res);
 		}
 	};
-	function writeErrorRes(res, message, errorCode){
-		res.writeHead(445, {'Content-Type': 'text/plain', 'Content-Length': message.length.toString(), 'HPKA-Error': errorCode.toString()});
-		res.write(message);
-		res.end();
-	}
+	return middleware;
 }
 
+/*
+* CLIENT METHODS
+*/
+//Create a client key pair
 exports.createClientKey = function(filename, keyType, options){
 	if (!(keyType == 'ecdsa' || keyType == 'dsa' || keyType == 'rsa')) throw new TypeError("Invalid key type. Must be either 'ecdsa', 'dsa' or 'rsa'");
 	var keyPair;
@@ -388,6 +423,7 @@ exports.createClientKey = function(filename, keyType, options){
 	saveKeyPair(filename, keyPair);
 }
 
+//Client object builder
 exports.client = function(keyFilename){
 	var keyPair = loadKeyPair(keyFilename);
 	if (!keyPair) throw new TypeError("Invalid key file");
@@ -406,6 +442,74 @@ exports.client = function(keyFilename){
 	};
 };
 
+function buildPayload(keyPair, username, actionType){
+	if (!(typeof keyPair == 'object' && typeof username == 'string' && typeof actionType == 'number')) throw new TypeError('Invalid parmeters');
+	//Calculating the buffer length depending on key type
+	var bufferLength = 0;
+	bufferLength += 1; //Version number
+	bufferLength += 8; //Timestamp
+	bufferLength += 1; //Username length byte
+	bufferLength += username.length; //Actual username length
+	bufferLength += 1; //actionType
+	bufferLength += 1; //keyType
+	if (keyPair.keyType == 'ecdsa'){
+		if (!(keyPair.publicKey && keyPair.publicKey.x && keyPair.publicKey.y && keyPair.privateKey && keyPair.curveName)) throw new TypeError('Invalid ECDSA key pair');
+		bufferLength += 1; //Curve ID
+		bufferLength += 2; //PublicKey.x length field
+		bufferLength += keyPair.publicKey.x.length; //Actual publicKey.x length
+		bufferLength += 2; //PublicKey.y length field
+		bufferLength += keyPair.publicKey.y.length;
+	} else if (keyPair.keyType == 'rsa'){
+		if (!(keyPair.modulus && keyPair.publicExponent && keyPair.privateExponent)) throw new TypeError('Invalid RSA key pair');
+		bufferLength += 2; //Modulus length field
+		bufferLength += keyPair.modulus.length; //Actual modulus length
+		bufferLength += 2; //PublicExp length field
+		bufferLength += keyPair.publicExponent.length; //Actual publicExponent length
+	} else if (keyPair.keyType == 'dsa'){
+		if (!(keyPair.primeField && keyPair.divider && keyPair.base && keyPair.publicElement && keyPair.privateExponent)) throw new TypeError('Invalid DSA key pair');
+		bufferLength += 2; //Prime field length field
+		bufferLength += keyPair.primeField.length; //Actual prime field length
+		bufferLength += 2; //Divider length field
+		bufferLength += keyPair.divider.length; //Actual divider length
+		bufferLength += 2; //Base length field
+		bufferLength += keyPair.base.length; //Actual base length
+		bufferLength += 2; //Public element length field
+		bufferLength += keyPair.publicElement.length; //Actual public element length
+	} else throw new TypeError('Invalid key type');
+	bufferLength += 10; //The 10 random bytes appended to the end of the payload; augments signature's entropy
+	//Building the payload
+	var buffer = new Buffer(bufferLength);
+	var offset = 0;
+	//Writing protocol version
+	buffer[0] = 0x01;
+	offset++;
+	//Writing the timestamp
+	var timestamp = Math.floor(Date.now / 1000);
+	buffer.writeInt32BE(timestamp >> 32, offset);
+	offset += 4;
+	buffer.writeInt32BE(timestamp, offset, true);
+	offset += 4;
+	//Writing the username length, then the username itself
+	buffer.writeUInt8(username.length, offset);
+	offset++;
+	buffer.write(username, offset, offset + username.length);
+	offset += username.length;
+	//Writing the actionType
+	buffer.writeUInt8(actionType, offset);
+	offset++;
+	//Writing the keyType
+	if (keyPair.keyType == 'ecdsa'){
+		buffer.writeUInt8(0x01, offset);
+	} else if (keyPair.keyType == 'rsa'){
+		buffer.writeUInt8(0x02, offset);
+	} else {
+		buffer.writeUInt8(0x04, offset);
+	}
+	offset++;
+
+}
+
+//Loading the key pair from a file
 function loadKeyPair(filename){
 	var fileBuffer = fs.readFileSync(filename);
 	if (!fileBuffer) throw new TypeError("File not found");
@@ -503,6 +607,7 @@ function loadKeyPair(filename){
 	return keyPair;
 }
 
+//Writing a key pair to a file
 function saveKeyPair(filename, keyPair){
 	var offset = 0;
 	var buffer;

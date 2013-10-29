@@ -13,7 +13,7 @@ npm install hpka
 
 ## Dependencies
 
-This module depends on [node-cryptopp](https://github.com/Tashweesh/node-crytopp), which itself depends on the [Crypto++](http://cryptopp.com) cryptography library. 
+This module depends on [node-cryptopp](https://github.com/Tashweesh/node-crytopp), which itself depends on the [Crypto++](http://cryptopp.com) cryptography library. Note that if you want to use this module as an expressjs middlware, then the `express` package becomes an implicit dependency that you will install manually.
 
 ## Usage
 
@@ -32,8 +32,20 @@ As said above, this module as of now acts as a express middleware. The module ex
 	
 Note that :
 
-* you must use either ```res``` or ```callback``` in loginCheck
-* but you **must** use ```res``` in registration
+* you must use either ```res``` or ```callback``` in loginCheck to send a response to the client
+* but you **must** use ```res``` in registration to send a response to the client
+
+**```hpka.httpMiddlware(requestHandler, loginCheck, registartion, strict)```**: middleware building function for the standard [HTTP](http://nodejs.org/api/http.html) and [HTTPS](http://nodejs.org/api/https.html) libraries. The result of this function should be used as the ```requestHandler``` in the ```createServer``` methods of these libraries. The function receives the following parameters :
+
+* requestHandler(req, res) : the request handler you would normally put in the ```createServer``` methods
+* loginCheck(HPKAReq, res, callback(Boolean)) : 
+	* HPKAReq : the HPKAReq object, as descibed below
+	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, in case you want to show some error pages and what not
+	* callback(isValid) : function to be called if you didn't respond to the client. isValid should be a boolean indicating whether the user is registered and the public key is valid or not
+* registration(HPKAReq, res) :
+	* HPKAReq : the HPKAReq object, as described below
+	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, to show a welcome page (or back to the site's homepage).
+* strict : must be a boolean when defined. Defines whether it shows error message when there is a problem, or just renders the page while ignoring the authentication request. Note that this applies to all error types except a "unavailable username" error
 
 **```hpka.verifySignature(reqBlob, signature, callback(isValid, username, HPKAReq))```**: checks the signature of a HPKA request. To be used if you choose to manage signature verification and actionType handling by yourself
 
