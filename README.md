@@ -6,7 +6,7 @@ A Node.js implementation of the [HPKA protocol](https://github.com/Tashweesh/hpk
 
 ## Installation
 
-To install node-hpka, simply run from app's root folder :
+To install the latest stable version node-hpka, simply run from app's root folder :
 ```
 npm install hpka
 ```
@@ -34,6 +34,7 @@ Note that :
 
 * you must use either ```res``` or ```callback``` in loginCheck to send a response to the client
 * but you **must** use ```res``` in registration to send a response to the client
+
 
 **```hpka.httpMiddlware(requestHandler, loginCheck, registartion, strict)```**: middleware building function for the standard [HTTP](http://nodejs.org/api/http.html) and [HTTPS](http://nodejs.org/api/https.html) libraries. The result of this function should be used as the ```requestHandler``` in the ```createServer``` methods of these libraries. The function receives the following parameters :
 

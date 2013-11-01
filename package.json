@@ -23,6 +23,6 @@
     "url": "https://github.com/Tashweesh/node-hpka/issues"
   },
   "dependencies": {
-    "cryptopp": "~0.1.2"
+    "cryptopp": "~0.1.3"
   }
 }

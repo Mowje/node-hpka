@@ -442,8 +442,8 @@ exports.client = function(keyFilename){
 	};
 };
 
-function buildPayload(keyPair, username, actionType){
-	if (!(typeof keyPair == 'object' && typeof username == 'string' && typeof actionType == 'number')) throw new TypeError('Invalid parmeters');
+function buildPayload(keyPair, username, actionType, callback){
+	if (!(typeof keyPair == 'object' && typeof username == 'string' && typeof actionType == 'number' && typeof callback == 'function')) throw new TypeError('Invalid parmeters');
 	//Calculating the buffer length depending on key type
 	var bufferLength = 0;
 	bufferLength += 1; //Version number
@@ -497,16 +497,73 @@ function buildPayload(keyPair, username, actionType){
 	//Writing the actionType
 	buffer.writeUInt8(actionType, offset);
 	offset++;
-	//Writing the keyType
 	if (keyPair.keyType == 'ecdsa'){
+		//Writing the key type
 		buffer.writeUInt8(0x01, offset);
+		offset++;
+		//Writing publicKey.x
+		buffer.writeUInt16BE(keyPair.publicKey.x.length, offset);
+		offset += 2;
+		buffer.write(keyPair.publicKey.x, offset, offset + keyPair.publicKey.x.length, 'hex');
+		offset += keyPair.publicKey.x.length;
+		//Writing publicKey.y
+		buffer.writeUInt16BE(keyPair.publicKey.y.length, offset);
+		offset += 2;
+		buffer.write(keyPair.publicKey.y, offset, offset + keyPair.publicKey.y.length, 'hex');
+		offset += keyPair.publicKey.y.length;
+		//Writing the curveID
+		buffer.writeUInt8(getCurveID(keyPair.curveName), offset);
+		offset++;
 	} else if (keyPair.keyType == 'rsa'){
+		//Writing the key type
 		buffer.writeUInt8(0x02, offset);
+		offset++;
+		//Writing the modulus
+		buffer.writeUInt16BE(keyPair.modulus.length, offset);
+		offset += 2;
+		buffer.write(keyPair.modulus, offset, offset + keyPair.publicKey.y.length, 'hex');
+		offset += keyPair.modulus.length;
+		//Writing the public exponent
+		buffer.writeUInt16BE(keyPair.publicExponent.length, offset);
+		offset += 2;
+		buffer.write(keyPair.publicExponent, offset, offset + keyPair.publicExponent.length, 'hex');
+		offset += keyPair.publicExponent.length;
 	} else {
+		//Writing the key type
 		buffer.writeUInt8(0x04, offset);
+		offset++;
+		//Mwaaaaaa3, why does DSA need so much variables....
+		//Writing the prime field
+		buffer.writeUInt16BE(keyPair.primeField.length, offset);
+		offset += 2;
+		buffer.write(keyPair.primeField, offset, offset + keyPair.primeField.length, 'hex');
+		offset += keyPair.primeField.length;
+		//Writing the divider
+		buffer.writeUInt16BE(keyPair.divider.length, offset);
+		offset += 2;
+		buffer.write(keyPair.divider, offset, offset + keyPair.divider.length, 'hex');
+		offset += keyPair.divider.length;
+		//Writing the base
+		buffer.writeUInt16BE(keyPair.base.length, offset);
+		offset += 2;
+		buffer.write(keyPair.base, offset, offset + keyPair.base.length, 'hex');
+		offset += keyPair.base.length;
+		//Writing public element
+		buffer.writeUInt16BE(keyPair.publicElement.length, offset);
+		offset += 2;
+		buffer.write(keyPair.publicElement, offset, offset + keyPair.publicElement.length, 'hex');
+		offset += keyPair.publicElement.length;
 	}
-	offset++;
+	var randomBytes = cryptopp.randomBytes(10);
+	buffer.write(randomBytes, offset, offset + 10, 'ascii');
+	offset += 10;
+	if (keyPair.keyType == 'ecdsa'){
 
+	} else if (keyPair.keyType == 'rsa'){
+
+	} else {
+		
+	}
 }
 
 //Loading the key pair from a file
@@ -649,7 +706,7 @@ function saveKeyPair(filename, keyPair){
 		buffer += keyPair.privateKey.length;
 	} else if (keyType == 'rsa'){
 		if (!(keyPair.modulus && keyPair.publicExponent && keyPair.privateExponent)) throw new TypeError("Missing parameters");
-		bufferLength += 1: //One byte for the key type
+		bufferLength += 1; //One byte for the key type
 		bufferLength += 2 + keyPair.modulus.length;
 		bufferLength += 2 + keyPair.publicExponent.length;
 		bufferLength += 2 + keyPair.privateExponent.length;
