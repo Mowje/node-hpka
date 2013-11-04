@@ -25,7 +25,6 @@ function getPubKeyObject(HPKAReq){
 		reqObj.base = HPKAReq.base;
 		reqObj.publicElement = HPKAReq.publicElement;
 	} else throw new TypeError('Invalid key type : ' + HPKAReq.keyType);
-	//Removing non-PKA related info
 	return reqObj;
 }
 
@@ -33,19 +32,22 @@ var requestHandler = function(req, res){
 	var headers = {'Content-Type': 'text/plain'};
 	var body;
 	if (req.username){
+		console.log(req.method + ' ' + req.url + ' authenticated request by ' + req.username);
 		body = 'Authenticated as : ' + req.username;
 	} else {
+		console.log(req.method + ' ' + req.url + ' anonymous request');
 		body = 'Anonymous user';
 	}
 	headers['Content-Length'] = body.length;
 	res.writeHead(200, headers);
 	res.write(body);
 	res.end();
+};
 
 var loginCheck = function(HPKAReq, res, callback){
-	if (userList[HPKAReq.username] && getPubKeyObject(HPKAReq) == userList[HPKAReq.username]) callback(true);
+	if (typeof userList[HPKAReq.username] == 'string' && getPubKeyObject(HPKAReq) == userList[HPKAReq.username]) callback(true);
 	else callback(false);
-}
+};
 
 var registration = function(HPKAReq, res){
 	var username = HPKAReq.username;
@@ -57,7 +59,35 @@ var registration = function(HPKAReq, res){
 	res.end();
 };
 
-var server = http.createServer(hpka.httpMiddlware(requestHandler, loginCheck, registration, true));
-server.listen(3000);
+var server = http.createServer(hpka.httpMiddleware(requestHandler, loginCheck, registration, true));
+server.listen(2500);
 
-var 
+var keyPath = './hpkaclient.key';
+
+if (!fs.existsSync(keyPath)){
+	hpka.createClientKey(keyPath, 'ecdsa', 'secp256r1');
+}
+
+var reqOptions = {
+	hostname: 'localhost',
+	port: 2500,
+	path: '/',
+	method: 'GET'
+};
+var client = hpka.client(keyPath, 'test');
+client.request(reqOptions, undefined, 1, function(res){
+	res.on('data', function(data){
+		console.log('Recieved data from server : ' + data);
+	});
+	res.on('close', function(){
+		client.request(reqOptions, undefined, 0, function(res2){
+			res2.on('data', function(data){
+				console.log('Recieved data from server : ' + data);
+			});
+			res2.on('close', function(){
+				console.log('End of example HPKA script');
+				process.exit();
+			});
+		});
+	});
+});

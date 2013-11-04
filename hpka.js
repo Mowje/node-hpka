@@ -339,11 +339,11 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, stri
 				}
 				//Checking the signature then calling the handlers according to the actionType
 				try {
-					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, HPKASignature, function(isValid)){
+					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, HPKASignature, function(isValid){
 						if (isValid){
 							//Checking the action type and calling the right handlers
 							if (HPKAReq.actionType == 0x00){ //Authenticated HTTP request
-								loginCheck(HPKAReq, res, function(isValid)){
+								loginCheck(HPKAReq, res, function(isValid){
 									if (isValid){
 										req.username = HPKAReq.username;
 										req.hpkareq = HPKAReq;
@@ -374,7 +374,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, stri
 								requestHandler(req, res);
 							}
 						}
-					}
+					});
 				} catch (e){
 					console.log('error : ' + JSON.stringify(e));
 					writeErrorRes(res, 'Invalid signature', 2);
@@ -424,26 +424,33 @@ exports.createClientKey = function(filename, keyType, options){
 }
 
 //Client object builder
-exports.client = function(keyFilename){
+exports.client = function(keyFilename, usernameVal){
+	if (typeof usernameVal != 'string') throw new TypeError('Username must be a string');
+	var username = usernameVal
 	var keyPair = loadKeyPair(keyFilename);
 	if (!keyPair) throw new TypeError("Invalid key file");
-	this.request = function(options, body, callback){
+	this.request = function(options, body, actionType, callback){
+		if (actionType < 0x00 || actionType > 0x04) throw new TypeError('Invalid actionType. Must be an integer between 0 and 4.');
 		if (!options.headers) options.headers = {};
-		//options.headers["HPKA-Req"]
-		//options.headers["HPKA-Signature"]
-		/*
-			BUILDING THE PAYLOAD
-		*/
-		var req = http.request(options, function(res){
-			callback(res);
+		buildPayload(keyPair, username, actionType, function(req, signature){
+			options.headers["HPKA-Req"] = req;
+			options.headers["HPKA-Signature"] = signature;
+			var req = http.request(options, function(res){
+				callback(res);
+			});
+			if (body) req.write(body);
+			req.end();
 		});
-		if (body) req.write(body);
-		req.end();
 	};
 };
 
 function buildPayload(keyPair, username, actionType, callback){
 	if (!(typeof keyPair == 'object' && typeof username == 'string' && typeof actionType == 'number' && typeof callback == 'function')) throw new TypeError('Invalid parmeters');
+	//If ECDSA, check that it isn't a EC2N curve
+	if (keyPair.keyType == 'ecdsa') {
+		var curveId = getCurveID(keyPair.curveName);
+		if (curveId >= 0x80) throw new TypeError('Unsupported curve type as of now. Some bug need to be fixed in cryptopp');
+	}
 	//Calculating the buffer length depending on key type
 	var bufferLength = 0;
 	bufferLength += 1; //Version number
@@ -557,12 +564,21 @@ function buildPayload(keyPair, username, actionType, callback){
 	var randomBytes = cryptopp.randomBytes(10);
 	buffer.write(randomBytes, offset, offset + 10, 'ascii');
 	offset += 10;
+
+	var req = buffer.toString('base64');
 	if (keyPair.keyType == 'ecdsa'){
-
+		//Because binary curves are not yet supported by node-cryptopp, and we checked at the beginning of this method that the user isn't using them : prime curves are used
+		cryptopp.ecdsa.prime.sign(req, keyPair.privateKey, keyPair.curveName, function(signature){
+			callback(req, signature);
+		});
 	} else if (keyPair.keyType == 'rsa'){
-
+		cryptopp.rsa.sign(req, keyPair.modulus, keyPair.privateExponent, keyPair.publicExponent, function(signature){
+			callback(req, signature);
+		});
 	} else {
-		
+		cryptopp.dsa.sign(req, keyPair.primeField, keyPair.divider, keyPair.base, keyPair.privateExponent, function(signature){
+			callback(req, signature);
+		});
 	}
 }
 
