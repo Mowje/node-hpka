@@ -58,14 +58,27 @@ var registration = function(HPKAReq, res){
 	res.write(body);
 	res.end();
 };
-
+console.log('Starting the server');
 var server = http.createServer(hpka.httpMiddleware(requestHandler, loginCheck, registration, true));
-server.listen(2500);
+server.listen(2500, function(){
+	console.log('Server started');
+});
+
+
+//save and load key pair. Compare results
+//These methods work properly for ECDSA, DSA and RSA
+var keyPair = hpka.createClientKey("ecdsa", "secp256r1");
+hpka.saveKeyPair('./keysave.key', keyPair);
+var loadedKeypair = hpka.loadKeyPair('./keysave.key');
+console.log('Generated key pair : ' + JSON.stringify(keyPair));
+console.log('Loaded key pair : ' + JSON.stringify(loadedKeypair));
 
 var keyPath = './hpkaclient.key';
 
+console.log('Looking for a client key');
 if (!fs.existsSync(keyPath)){
-	hpka.createClientKey(keyPath, 'ecdsa', 'secp256r1');
+	console.log('Creating a client key');
+	hpka.createClientKey('ecdsa', 'secp256r1', keyPath);
 }
 
 var reqOptions = {
@@ -74,7 +87,10 @@ var reqOptions = {
 	path: '/',
 	method: 'GET'
 };
-var client = hpka.client(keyPath, 'test');
+
+
+console.log('Creating a client instance and loading the key');
+var client = new hpka.client(keyPath, 'test');
 client.request(reqOptions, undefined, 1, function(res){
 	res.on('data', function(data){
 		console.log('Recieved data from server : ' + data);

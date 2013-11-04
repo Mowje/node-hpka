@@ -1,5 +1,6 @@
 var cryptopp = require('cryptopp');
 var Buffer = require('buffer').Buffer;
+var fs = require('fs');
 var http = require('http');
 
 var getCurveID = function(curveName){
@@ -37,7 +38,7 @@ var getCurveID = function(curveName){
 	else if (curveName == 'sect409k1') return 0x8F;
 	else if (curveName == 'sect571r1') return 0x90;
 	else if (curveName == 'sect571k1') return 0x91;
-	else return 0x00;
+	else return undefined;
 };
 
 var getCurveName = function(curveID){
@@ -100,6 +101,8 @@ var processReqBlob = function(pubKeyBlob){
 	var actualTimestamp = Date.now();
 	//actualTimestamp -= actualTimestamp % 1000;
 	actualTimestamp = Math.floor(actualTimestamp / 1000);
+	console.log('Actual timestamp : ' + actualTimestamp);
+	console.log('Req timestamp : ' + timeStamp);
 	if (actualTimestamp >= timeStamp + 120) throw new TypeError("Request is too old");
 	//Reading the username length
 	var usernameLength = buf[byteIndex];
@@ -230,7 +233,7 @@ exports.middleware = function(loginCheck, registration, strict){
 				try {
 					HPKAReq = processReqBlob(HPKAReqBlob);
 				} catch (e){
-					console.log('HPKA-Req parsing issue; e : ' + JSON.stringify(e));
+					console.log('HPKA-Req parsing issue; e : ' + e);
 					if (strict){
 						res.status(445).set('HPKA-Error', '1');
 						res.send('Malformed HPKA request');
@@ -293,7 +296,7 @@ exports.middleware = function(loginCheck, registration, strict){
 						}
 					});
 				} catch (e){
-					console.log('error : ' + JSON.stringify(e));
+					console.log('error : ' + e);
 					if (strict){
 						res.status(445).set('HPKA-Error', '2');
 						res.send('Invalid signature');
@@ -303,7 +306,7 @@ exports.middleware = function(loginCheck, registration, strict){
 					return;
 				}
 			} catch (e){
-				console.log(e);
+				console.log('error : ' + e);
 				next();
 			}
 		} else {
@@ -325,15 +328,17 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, stri
 		res.end();
 	}
 	var middleware = function(req, res){
-		if (req.headers['HPKA-Req'] && req.headers['HPKA-Signature']){
+		console.log('Headers found by the server : ' + JSON.stringify(req.headers));
+		if (req.headers['hpka-req'] && req.headers['hpka-signature']){
 			console.log('HPKA headers found');
 			try {
-				var HPKAReqBlob = req.headers['HPKA-Req'], HPKASignature = req.headers['HPKA-Signature'];
+				var HPKAReqBlob = req.headers['hpka-req'], HPKASignature = req.headers['hpka-signature'];
 				var HPKAReq;
 				//Parsing the request
 				try {
 					HPKAReq = processReqBlob(HPKAReqBlob);
 				} catch (e){
+					console.log('e : ' + e);
 					writeErrorRes(res, 'HPKA-Req parsing error', 1);
 					return;
 				}
@@ -376,12 +381,12 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, stri
 						}
 					});
 				} catch (e){
-					console.log('error : ' + JSON.stringify(e));
+					console.log('error : ' + e);
 					writeErrorRes(res, 'Invalid signature', 2);
 					return;
 				}
 			} catch (e){
-				console.log('error : ' + JSON.stringify(e));
+				console.log('error : ' + e);
 				requestHandler(req, res);
 			}
 		} else {
@@ -397,7 +402,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, stri
 * CLIENT METHODS
 */
 //Create a client key pair
-exports.createClientKey = function(filename, keyType, options){
+exports.createClientKey = function(keyType, options, filename){
 	if (!(keyType == 'ecdsa' || keyType == 'dsa' || keyType == 'rsa')) throw new TypeError("Invalid key type. Must be either 'ecdsa', 'dsa' or 'rsa'");
 	var keyPair;
 	if (keyType == 'ecdsa'){
@@ -407,20 +412,25 @@ exports.createClientKey = function(filename, keyType, options){
 			//Binary curves not supported yet by node-cryptopp
 			throw new TypeError('Unsupported curve');
 		} else {
-			keyPair = cryptopp.ecdsa.prime.generateKeyPair(curveId);
+			keyPair = cryptopp.ecdsa.prime.generateKeyPair(options);
+			keyPair.keyType = 'ecdsa';
 		}
 	} else if (keyType == 'rsa'){
 		//Options should be key size
 		var keySize = Number(options);
 		if (Number.isNaN(keySize)) throw new TypeError('Invalid key size');
 		keyPair = cryptopp.rsa.generateKeyPair(keySize);
+		keyPair.keyType = 'rsa';
 	} else { //DSA case
 		//Options should be key size
 		var keySize = Number(options);
 		if (Number.isNaN(keySize)) throw new TypeError('Invalid key size');
 		keyPair = cryptopp.dsa.generateKeyPair(keySize);
+		keyPair.keyType = 'dsa';
 	}
-	saveKeyPair(filename, keyPair);
+	console.log('Saving the client key');
+	if (filename && typeof filename == "string") saveKeyPair(filename, keyPair);
+	return keyPair
 }
 
 //Client object builder
@@ -432,6 +442,7 @@ exports.client = function(keyFilename, usernameVal){
 	this.request = function(options, body, actionType, callback){
 		if (actionType < 0x00 || actionType > 0x04) throw new TypeError('Invalid actionType. Must be an integer between 0 and 4.');
 		if (!options.headers) options.headers = {};
+		console.log('Building the payload for ' + username);
 		buildPayload(keyPair, username, actionType, function(req, signature){
 			options.headers["HPKA-Req"] = req;
 			options.headers["HPKA-Signature"] = signature;
@@ -446,11 +457,34 @@ exports.client = function(keyFilename, usernameVal){
 
 function buildPayload(keyPair, username, actionType, callback){
 	if (!(typeof keyPair == 'object' && typeof username == 'string' && typeof actionType == 'number' && typeof callback == 'function')) throw new TypeError('Invalid parmeters');
+	if (!keyPair.keyType) throw new TypeError('Invalid keyPair obejct. Missing key type');
+	if (typeof keyPair.keyType != 'string') throw new TypeError('Invalid keyType. Must be a string');
+	if (keyPair.keyType == 'ecdsa'){
+		if (!(keyPair.publicKey && typeof keyPair.publicKey == 'object')) throw new TypeError('Invalid keyPair. Missing publicKey or invalid type. Must be an object having x and y attributes');
+		if (!(keyPair.publicKey.x && typeof keyPair.publicKey.x == 'string')) throw new TypeError('keyPair.publicKey.x is either missing or is not a string');
+		if (!(keyPair.publicKey.y && typeof keyPair.publicKey.y == 'string')) throw new TypeError('keyPair.publicKey.y is either missing or is not a string');
+		if (!(keyPair.privateKey && typeof keyPair.privateKey == 'string')) throw new TypeError('keyPair.privateKey is either missing or is not a string');
+		if (!(keyPair.curveName && typeof keyPair.curveName == 'string')) throw new TypeError('keyPair.curveName is either missing or is not a string');
+	} else if (keyPair.keyType == 'rsa'){
+		if (!(keyPair.modulus && typeof keyPair.modulus == 'string')) throw new TypeError('keyPair.modulus is either missing or is not a string');
+		if (!(keyPair.publicExponent && typeof keyPair.publicExponent == 'string')) throw new TypeError('keyPair.publicExponent is either missing or is not a string');
+		if (!(keyPair.privateExponent && typeof keyPair.privateExponent == 'string')) throw new TypeError('keyPair.privateExponent is either or is not a string');
+	} else if (keyPair.keyType == 'dsa'){
+		if (!(keyPair.primeField && typeof keyPair.primeField == 'string')) throw new TypeError('keyPair.primeField is either missing or is not a string');
+		if (!(keyPair.divider && typeof keyPair.divider == 'string')) throw new TypeError('keyPair.divider is either missing or is not a string');
+		if (!(keyPair.base && typeof keyPair.base == 'string')) throw new TypeError('keyPair.base is either missing or is not a string');
+		if (!(keyPair.publicElement && typeof keyPair.publicElement == 'string')) throw new TypeError('keyPair.publicElement is either missing or is not a string');
+		if (!(keyPair.privateExponent && typeof keyPair.privateExponent == 'string')) throw new TypeError('keyPair.privateExponent is either missing or is not a string');
+	} else throw new TypeError('Invalid key type. Must be either "ecdsa", "rsa" or "dsa"');
 	//If ECDSA, check that it isn't a EC2N curve
 	if (keyPair.keyType == 'ecdsa') {
 		var curveId = getCurveID(keyPair.curveName);
 		if (curveId >= 0x80) throw new TypeError('Unsupported curve type as of now. Some bug need to be fixed in cryptopp');
 	}
+	if (!(username && typeof username == 'string')) throw new TypeError('username must be a string');
+	if (username.length > 255) throw new TypeError('Username must be at most 255 bytes long');
+	if (!(actionType && typeof actionType == 'number')) actionType = 0x00;
+	if (!(callback && typeof callback == 'function')) throw new TypeError('');
 	//Calculating the buffer length depending on key type
 	var bufferLength = 0;
 	bufferLength += 1; //Version number
@@ -463,43 +497,46 @@ function buildPayload(keyPair, username, actionType, callback){
 		if (!(keyPair.publicKey && keyPair.publicKey.x && keyPair.publicKey.y && keyPair.privateKey && keyPair.curveName)) throw new TypeError('Invalid ECDSA key pair');
 		bufferLength += 1; //Curve ID
 		bufferLength += 2; //PublicKey.x length field
-		bufferLength += keyPair.publicKey.x.length; //Actual publicKey.x length
+		bufferLength += keyPair.publicKey.x.length / 2; //Actual publicKey.x length. Divided by 2 because of hex encoding (that will be removed)...
 		bufferLength += 2; //PublicKey.y length field
-		bufferLength += keyPair.publicKey.y.length;
+		bufferLength += keyPair.publicKey.y.length / 2; //Actual publicKey.y length. Divided by 2 because of hex encoding (that will be removed)...
 	} else if (keyPair.keyType == 'rsa'){
 		if (!(keyPair.modulus && keyPair.publicExponent && keyPair.privateExponent)) throw new TypeError('Invalid RSA key pair');
 		bufferLength += 2; //Modulus length field
-		bufferLength += keyPair.modulus.length; //Actual modulus length
+		bufferLength += keyPair.modulus.length / 2; //Actual modulus length. Divided by 2 because of hex encoding
 		bufferLength += 2; //PublicExp length field
-		bufferLength += keyPair.publicExponent.length; //Actual publicExponent length
+		bufferLength += keyPair.publicExponent.length / 2; //Actual publicExponent length. Divided by 2 because of hex encoding
 	} else if (keyPair.keyType == 'dsa'){
 		if (!(keyPair.primeField && keyPair.divider && keyPair.base && keyPair.publicElement && keyPair.privateExponent)) throw new TypeError('Invalid DSA key pair');
 		bufferLength += 2; //Prime field length field
-		bufferLength += keyPair.primeField.length; //Actual prime field length
+		bufferLength += keyPair.primeField.length / 2; //Actual prime field length
 		bufferLength += 2; //Divider length field
-		bufferLength += keyPair.divider.length; //Actual divider length
+		bufferLength += keyPair.divider.length / 2; //Actual divider length
 		bufferLength += 2; //Base length field
-		bufferLength += keyPair.base.length; //Actual base length
+		bufferLength += keyPair.base.length / 2; //Actual base length
 		bufferLength += 2; //Public element length field
-		bufferLength += keyPair.publicElement.length; //Actual public element length
-	} else throw new TypeError('Invalid key type');
+		bufferLength += keyPair.publicElement.length / 2; //Actual public element length
+	}
 	bufferLength += 10; //The 10 random bytes appended to the end of the payload; augments signature's entropy
 	//Building the payload
+	console.log('Req payload length : ' + bufferLength);
 	var buffer = new Buffer(bufferLength);
 	var offset = 0;
 	//Writing protocol version
 	buffer[0] = 0x01;
 	offset++;
 	//Writing the timestamp
-	var timestamp = Math.floor(Date.now / 1000);
-	buffer.writeInt32BE(timestamp >> 32, offset);
+	var timestamp = Math.floor(Number(Date.now()) / 1000);
+	console.log('Timestamp at buildPayload : ' + timestamp);
+	buffer.writeInt32BE(timestamp >> 31, offset);
 	offset += 4;
 	buffer.writeInt32BE(timestamp, offset, true);
 	offset += 4;
+	console.log('Payload after adding the timestamp : ' + JSON.stringify(buffer));
 	//Writing the username length, then the username itself
 	buffer.writeUInt8(username.length, offset);
 	offset++;
-	buffer.write(username, offset, offset + username.length);
+	buffer.write(username, offset);
 	offset += username.length;
 	//Writing the actionType
 	buffer.writeUInt8(actionType, offset);
@@ -508,16 +545,20 @@ function buildPayload(keyPair, username, actionType, callback){
 		//Writing the key type
 		buffer.writeUInt8(0x01, offset);
 		offset++;
+		var publicKey = {};
+		publicKey.x = cryptopp.hex.decode(keyPair.publicKey.x);
+		publicKey.y = cryptopp.hex.decode(keyPair.publicKey.y);
+		//console.log('ECDSA params :\nPublic x : ' + publicKey.x + '\nPublic y : ' + publicKey.y);
 		//Writing publicKey.x
-		buffer.writeUInt16BE(keyPair.publicKey.x.length, offset);
+		buffer.writeUInt16BE(publicKey.x.length, offset);
 		offset += 2;
-		buffer.write(keyPair.publicKey.x, offset, offset + keyPair.publicKey.x.length, 'hex');
-		offset += keyPair.publicKey.x.length;
+		buffer.write(publicKey.x, offset, offset + publicKey.x.length, 'ascii');
+		offset += publicKey.x.length;
 		//Writing publicKey.y
-		buffer.writeUInt16BE(keyPair.publicKey.y.length, offset);
+		buffer.writeUInt16BE(publicKey.y.length, offset);
 		offset += 2;
-		buffer.write(keyPair.publicKey.y, offset, offset + keyPair.publicKey.y.length, 'hex');
-		offset += keyPair.publicKey.y.length;
+		buffer.write(publicKey.y, offset, offset + publicKey.y.length, 'ascii');
+		offset += publicKey.y.length;
 		//Writing the curveID
 		buffer.writeUInt8(getCurveID(keyPair.curveName), offset);
 		offset++;
@@ -525,44 +566,51 @@ function buildPayload(keyPair, username, actionType, callback){
 		//Writing the key type
 		buffer.writeUInt8(0x02, offset);
 		offset++;
+		var modulus = cryptopp.hex.decode(keyPair.modulus);
+		var publicExponent = cryptopp.hex.decode(keyPair.publicExponent);
+		//console.log('RSA params :\nModulus : ')
 		//Writing the modulus
-		buffer.writeUInt16BE(keyPair.modulus.length, offset);
+		buffer.writeUInt16BE(modulus.length, offset);
 		offset += 2;
-		buffer.write(keyPair.modulus, offset, offset + keyPair.publicKey.y.length, 'hex');
-		offset += keyPair.modulus.length;
+		buffer.write(modulus, offset, offset + publicKey.y.length, 'ascii');
+		offset += modulus.length;
 		//Writing the public exponent
-		buffer.writeUInt16BE(keyPair.publicExponent.length, offset);
+		buffer.writeUInt16BE(publicExponent.length, offset);
 		offset += 2;
-		buffer.write(keyPair.publicExponent, offset, offset + keyPair.publicExponent.length, 'hex');
-		offset += keyPair.publicExponent.length;
+		buffer.write(publicExponent, offset, offset + publicExponent.length, 'ascii');
+		offset += publicExponent.length;
 	} else {
 		//Writing the key type
 		buffer.writeUInt8(0x04, offset);
 		offset++;
 		//Mwaaaaaa3, why does DSA need so much variables....
+		var primeField = cryptopp.hex.decode(keyPair.primeField);
+		var divider = cryptopp.hex.decode(keyPair.divider);
+		var base = cryptopp.hex.decode(keyPair.base);
+		var publicElement = cryptopp.hex.decode(keyPair.publicElement);
 		//Writing the prime field
-		buffer.writeUInt16BE(keyPair.primeField.length, offset);
+		buffer.writeUInt16BE(primeField.length, offset);
 		offset += 2;
-		buffer.write(keyPair.primeField, offset, offset + keyPair.primeField.length, 'hex');
-		offset += keyPair.primeField.length;
+		buffer.write(primeField, offset, offset + primeField.length, 'ascii');
+		offset += primeField.length;
 		//Writing the divider
-		buffer.writeUInt16BE(keyPair.divider.length, offset);
+		buffer.writeUInt16BE(divider.length, offset);
 		offset += 2;
-		buffer.write(keyPair.divider, offset, offset + keyPair.divider.length, 'hex');
-		offset += keyPair.divider.length;
+		buffer.write(divider, offset, offset + divider.length, 'ascii');
+		offset += divider.length;
 		//Writing the base
-		buffer.writeUInt16BE(keyPair.base.length, offset);
+		buffer.writeUInt16BE(base.length, offset);
 		offset += 2;
-		buffer.write(keyPair.base, offset, offset + keyPair.base.length, 'hex');
-		offset += keyPair.base.length;
+		buffer.write(base, offset, offset + base.length, 'ascii');
+		offset += base.length;
 		//Writing public element
-		buffer.writeUInt16BE(keyPair.publicElement.length, offset);
+		buffer.writeUInt16BE(publicElement.length, offset);
 		offset += 2;
-		buffer.write(keyPair.publicElement, offset, offset + keyPair.publicElement.length, 'hex');
-		offset += keyPair.publicElement.length;
+		buffer.write(publicElement, offset, offset + publicElement.length, 'ascii');
+		offset += publicElement.length;
 	}
 	var randomBytes = cryptopp.randomBytes(10);
-	buffer.write(randomBytes, offset, offset + 10, 'ascii');
+	buffer.write(randomBytes, offset, offset + randomBytes.length / 2, 'hex');
 	offset += 10;
 
 	var req = buffer.toString('base64');
@@ -587,10 +635,7 @@ function loadKeyPair(filename){
 	var fileBuffer = fs.readFileSync(filename);
 	if (!fileBuffer) throw new TypeError("File not found");
 	var offset = 3;
-	var keyHeader = "";
-	for (var i = 0; i < 3; i++){
-		keyHeader += fileBuffer[i];
-	}
+	var keyHeader = fileBuffer.toString('ascii', 0, 3);
 	if (keyHeader != "key") throw new TypeError("Invalid key file");
 	var keyPair = {};
 	var keyType = fileBuffer[offset];
@@ -679,17 +724,22 @@ function loadKeyPair(filename){
 	} else throw new TypeError("Invalid key type");
 	return keyPair;
 }
+exports.loadKeyPair = loadKeyPair;
 
 //Writing a key pair to a file
 function saveKeyPair(filename, keyPair){
 	var offset = 0;
 	var buffer;
-	var bufferLength = 3; //3 for the first letters "key" in the file
+	var bufferLength = 3; //3 for the first letters "key" in the file; the dummy header
 	var keyType = keyPair.keyType;
 	if (!(keyType == 'ecdsa' || keyType == 'dsa' || keyType == 'rsa')) throw new TypeError("Invalid key type. Must be either 'ecdsa', 'dsa' or 'rsa'");
 	if (keyType == 'ecdsa'){
 		if (!(keyPair.curveName && keyPair.publicKey && keyPair.publicKey.x && keyPair.publicKey.y && keyPair.privateKey)) throw new TypeError("Missing parameters");
 		var curveID = getCurveID(keyPair.curveName);
+		/*var publicKey = {};
+		publicKey.x = cryptopp.hex.decode(keyPair.publicKey.x);
+		publicKey.y = cryptopp.hex.decode(keyPair.publicKey.y);
+		var privateKey = cryptopp.hex.decode(keyPair.privateKey);*/
 		bufferLength += 1; //One byte for key type
 		bufferLength += 1; //One byte for curveID
 		bufferLength += 2 + keyPair.publicKey.x.length; //The number of bytes for the x coordinate of the public key
@@ -730,6 +780,9 @@ function saveKeyPair(filename, keyPair){
 		//Writing a dummy header
 		buffer.write("key", offset, 3);
 		offset += 3;
+		//Writing the key type
+		buffer.writeUInt8(0x01, offset);
+		offset++;
 		//Writing the modulus
 		buffer.writeUInt16BE(keyPair.modulus.length, offset);
 		offset += 2;
@@ -746,17 +799,20 @@ function saveKeyPair(filename, keyPair){
 		buffer.write(keyPair.privateExponent, offset, keyPair.privateExponent.length);
 		offset += keyPair.privateExponent.length;
 	} else { //DSA case
-		if (!(keyPair.primeField && keyPair.divider && keyPair.base && keyPair.publicElement && keyPair.privateKey)) throw new TypeError("Missing parameters");
+		if (!(keyPair.primeField && keyPair.divider && keyPair.base && keyPair.publicElement && keyPair.privateExponent)) throw new TypeError("Missing parameters");
 		bufferLength += 1; //One byte for the key type;
 		bufferLength += 2 + keyPair.primeField.length;
 		bufferLength += 2 + keyPair.divider.length;
 		bufferLength += 2 + keyPair.base.length;
 		bufferLength += 2 + keyPair.publicElement.length;
-		bufferLength += 2 + keyPair.privateKey.length;
+		bufferLength += 2 + keyPair.privateExponent.length;
 		buffer = new Buffer(bufferLength);
 		//Writing a dummy header
 		buffer.write("key", offset, 3);
 		offset += 3;
+		//Writing the key type
+		buffer.writeUInt8(0x02, offset);
+		offset++;
 		//Writing the prime field
 		buffer.writeUInt16BE(keyPair.primeField.length, offset);
 		offset += 2;
@@ -778,10 +834,11 @@ function saveKeyPair(filename, keyPair){
 		buffer.write(keyPair.publicElement, offset, keyPair.publicElement.length);
 		offset += keyPair.publicElement.length;
 		//Writing the private key
-		buffer.writeUInt16BE(keyPair.privateKey.length, offset);
+		buffer.writeUInt16BE(keyPair.privateExponent.length, offset);
 		offset += 2;
-		buffer.write(keyPair.privateKey, offset, keyPair.privateKey.length);
-		offset += keyPair.privateKey.length;
+		buffer.write(keyPair.privateExponent, offset, keyPair.privateExponent.length);
+		offset += keyPair.privateExponent.length;
 	}
 	fs.writeFileSync(filename, buffer);
 }
+exports.saveKeyPair = saveKeyPair;
