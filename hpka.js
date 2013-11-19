@@ -2,6 +2,7 @@ var cryptopp = require('cryptopp');
 var Buffer = require('buffer').Buffer;
 var fs = require('fs');
 var http = require('http');
+var https = require('https');
 
 var getCurveID = function(curveName){
 	//Prime curves
@@ -430,9 +431,10 @@ exports.createClientKey = function(keyType, options, filename){
 }
 
 //Client object builder
-exports.client = function(keyFilename, usernameVal){
+exports.client = function(keyFilename, usernameVal, useHttpsVal){
 	if (typeof usernameVal != 'string') throw new TypeError('Username must be a string');
 	var username = usernameVal
+	var useHttps = useHttpsVal;
 	var keyRing = new cryptopp.KeyRing();
 	keyRing.load(keyFilename);
 	try{
@@ -447,11 +449,19 @@ exports.client = function(keyFilename, usernameVal){
 		buildPayload(keyRing, username, actionType, function(req, signature){
 			options.headers["HPKA-Req"] = req;
 			options.headers["HPKA-Signature"] = signature;
-			var req = http.request(options, function(res){
-				callback(res);
-			});
-			if (body) req.write(body);
-			req.end();
+			if (useHttps){
+				var req = https.request(options, function(res){
+					callback(res);
+				});
+				if (body) req.write(body);
+				req.end();
+			} else {
+				var req = http.request(options, function(res){
+					callback(res);
+				});
+				if (body) req.write(body);
+				req.end();
+			}
 		});
 	};
 };
