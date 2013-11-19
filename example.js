@@ -28,6 +28,28 @@ function getPubKeyObject(HPKAReq){
 	return reqObj;
 }
 
+function checkPubKeyObjects(pubKey1, pubKey2){
+	if (!(typeof pubKey1 == 'object' && typeof pubKey2 == 'object')) throw new TypeError('Parameters must be objects');
+	if (pubKey1.keyType != pubKey2.keyType) return false;
+	if (pubKey1.keyType == "ecdsa"){
+		console.log('Common type : ecdsa');
+		if (pubKey1.curveName != pubKey2.curveName) return false;
+		if (pubKey1.point.x != pubKey2.point.x) return false;
+		if (pubKey1.point.y != pubKey2.point.y) return false;
+	} else if (pubKey1.keyType == "rsa"){
+		console.log('Common type : rsa');
+		if (pubKey1.modulus != pubKey2.modulus) return false;
+		if (pubKey1.publicExponent != pubKey2.publicExponent) return false;
+	} else if (pubKey1.keyType == "dsa"){
+		console.log('Common type : dsa');
+		if (pubKey1.primeField != pubKey2.primeField) return false;
+		if (pubKey1.divider != pubKey2.divider) return false;
+		if (pubKey1.base != pubKey2.base) return false;
+		if (pubKey1.publicElement != pubKey2.publicElement) return false;
+	} else throw new TypeError('Invalid keyType');
+	return true;
+}
+
 var requestHandler = function(req, res){
 	var headers = {'Content-Type': 'text/plain'};
 	var body;
@@ -45,7 +67,7 @@ var requestHandler = function(req, res){
 };
 
 var loginCheck = function(HPKAReq, res, callback){
-	if (typeof userList[HPKAReq.username] == 'string' && getPubKeyObject(HPKAReq) == userList[HPKAReq.username]) callback(true);
+	if (typeof userList[HPKAReq.username] == 'object' && checkPubKeyObjects(getPubKeyObject(HPKAReq), userList[HPKAReq.username])) callback(true);
 	else callback(false);
 };
 
@@ -64,21 +86,14 @@ server.listen(2500, function(){
 	console.log('Server started');
 });
 
-
-//save and load key pair. Compare results
-//These methods work properly for ECDSA, DSA and RSA
-var keyPair = hpka.createClientKey("ecdsa", "secp256r1");
-hpka.saveKeyPair('./keysave.key', keyPair);
-var loadedKeypair = hpka.loadKeyPair('./keysave.key');
-console.log('Generated key pair : ' + JSON.stringify(keyPair));
-console.log('Loaded key pair : ' + JSON.stringify(loadedKeypair));
-
 var keyPath = './hpkaclient.key';
+var keyRing;
 
 console.log('Looking for a client key');
 if (!fs.existsSync(keyPath)){
 	console.log('Creating a client key');
-	hpka.createClientKey('ecdsa', 'secp256r1', keyPath);
+	keyRing = hpka.createClientKey('dsa', 2048, keyPath);
+	console.log('Generated key pair : ' + JSON.stringify(keyRing.publicKeyInfo()));
 }
 
 var reqOptions = {
@@ -88,22 +103,16 @@ var reqOptions = {
 	method: 'GET'
 };
 
-
 console.log('Creating a client instance and loading the key');
 var client = new hpka.client(keyPath, 'test');
 client.request(reqOptions, undefined, 1, function(res){
 	res.on('data', function(data){
-		console.log('Recieved data from server : ' + data);
-	});
-	res.on('close', function(){
+		console.log('Recieved data from server (on registration) : ' + data);
 		client.request(reqOptions, undefined, 0, function(res2){
 			res2.on('data', function(data){
-				console.log('Recieved data from server : ' + data);
-			});
-			res2.on('close', function(){
-				console.log('End of example HPKA script');
+				console.log('Recieved data from server (on auth request) : ' + data);
 				process.exit();
 			});
-		});
+		})
 	});
 });
