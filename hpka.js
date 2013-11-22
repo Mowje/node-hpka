@@ -180,6 +180,12 @@ var processReqBlob = function(pubKeyBlob){
 	return req;
 };
 
+/*
+* req : object containing all the public key information that will be used to verify the signature
+* reqBlob : the req blob of which we will verify the signature
+* signature : the signature that we will verify, corresponding to reqBlob
+* callback : callback function taking a boolean indicating the validity of the signature
+*/
 var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callback){
 	//Checking if the key type is ECDSA
 	console.log('Parsed req : ' + JSON.stringify(req));
@@ -218,14 +224,12 @@ exports.verifySignature = verifySignature;
 {
 	loginCheck: function(HPKAReq, res, callback(isValid)),
 	registration: function(HPKAReq, res),
-	backup: function(HPKAReq, res),  // for upcoming versions
-	delete: function(HPKAReq, res), // for upcoming versions
-	restore: function(HPKAReq, res), // for upcoming versions
-	keyRotation: function(HPKAReq, RotationReq) // for upcoming versions
+	deletion: function(HPKAReq, res),
+	keyRotation: function(HPKAReq, RotationReq, res)
 }
 */
-exports.middleware = function(loginCheck, registration, strict){
-	if (!(typeof loginCheck == 'function' && typeof registration == 'function')) throw new TypeError('loginCheck and registration parameters must be event handlers (ie, functions)');
+exports.middleware = function(loginCheck, registration, deletion, keyRotation, strict){
+	if (!(typeof loginCheck == 'function' && typeof registration == 'function' && typeof deletion == 'function' && typeof keyRotation == 'function')) throw new TypeError('loginCheck and registration parameters must be event handlers (ie, functions)');
 	if (!(typeof strict == 'undefined' || typeof strict == 'boolean')) throw new TypeError("When 'strict' is defined, it must be a boolean");
 	var middlewareFunction = function(req, res, next){
 		if (req.get('HPKA-Req') && req.get("HPKA-Signature")){
@@ -275,6 +279,44 @@ exports.middleware = function(loginCheck, registration, strict){
 								//console.log('Calling registration handler');
 								registration(HPKAReq, res);
 								return;
+							} else if (HPKAReq.actionType == 2){
+								//User deletion
+								deletion(HPKAReq, res);
+							} else if (HPKAReq.actionType == 3){
+								//Key rotation
+								var newKeyBlob = req.get('HPKA-NewKey');
+								var newKeySignature = req.get('HPKA-NewKeySignature');
+								var newKeySignature2 = req.get('HPKA-NewKeySignature2');
+								var newKeyReq;
+								try {
+									newKeyReq = processReqBlob(newKeyBlob);
+								} catch (e){
+									res.status(445).set('HPKA-Error', '1');
+									res.send('HPKA-NewKey cannot be parsed');
+								}
+								if (newKeyReq.actionType != 3){
+									res.status(445).set('HPKA-Error', '1');
+									res.send('actionType must be 0x03 in both HPKA-Reqs when rotating keys');
+								}
+								if (HPKAReq.username != newKeyReq.username){
+									res.status(445).set('HPKA-Error', '1');
+									res.send('usernames must be the same in both requests');
+								}
+								verifySignatureWithoutProcessing(HPKAReq, newKeyBlob, newKeySignature, function(newKeySignIsValid){
+									if (newKeySignIsValid){
+										verifySignatureWithoutProcessing(newKeyReq, newKeyBlob, newKeySignature2, function(newKeySign2IsValid){
+											if (newKeySign2IsValid){
+												keyRotation(HPKAReq, newKeyReq, res); 
+											} else {
+												res.status(445).set('HPKA-Error', 2);
+												res.send('Self-signature on new key is invalid');
+											}
+										});
+									} else {
+										res.status(445).set('HPKA-Error', 2);
+										res.send('Signature of new key with actual key is invalid');
+									}
+								})
 							} else {
 								res.status(445);
 								if (Number(HPKAReq.actionType) < 0 || Number(HPKAReq.actionType) > 4){
@@ -322,8 +364,8 @@ exports.middleware = function(loginCheck, registration, strict){
 };
 
 //Standard HTTP middlware builder
-exports.httpMiddleware = function(requestHandler, loginCheck, registration, strict){
-	if (!(typeof requestHandler == 'function' && typeof loginCheck == 'function' && typeof registration == 'function')) throw new TypeError('requestHandler, loginCheck and registration must all be functions');
+exports.httpMiddleware = function(requestHandler, loginCheck, registration, deletion, keyRotation, strict){
+	if (!(typeof requestHandler == 'function' && typeof loginCheck == 'function' && typeof registration == 'function' && typeof deletion == 'function' && typeof keyRotation == 'function')) throw new TypeError('requestHandler, loginCheck, registration, deletion and keyRotation parameters must all be functions');
 	if (!(typeof strict == 'undefined' || typeof strict == 'boolean')) throw new TypeError("When 'strict' is defined, it must be a boolean");
 	function writeErrorRes(res, message, errorCode){
 		res.writeHead(445, {'Content-Type': 'text/plain', 'Content-Length': message.length.toString(), 'HPKA-Error': errorCode.toString()});
@@ -341,7 +383,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, stri
 				try {
 					HPKAReq = processReqBlob(HPKAReqBlob);
 				} catch (e){
-					console.log('e : ' + e);
+					console.log('parsing error, e : ' + e);
 					writeErrorRes(res, 'HPKA-Req parsing error', 1);
 					return;
 				}
@@ -367,6 +409,41 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, stri
 							} else if (HPKAReq.actionType == 0x01){ //Registration request
 								registration(HPKAReq, res);
 								return;
+							} else if (HPKAReq.actionType == 0x02){
+								deletion(HPKA, res);
+								return;
+							} else if (HPKAReq.actionType == 0x03){
+								if (!req.headers['hpka-newkey']) writeErrorRes(res, 'Missing HPKA-NewKey header', 1);
+								if (!req.headers['hpka-newkeysignature']) writeErrorRes(res, 'Missing HPKA-NewKeySignature header', 1);
+								if (!req.headers['hpka-newkeysignature2']) writeErrorRes(res, 'Missing HPKA-NewKeySignature2 header', 1);
+								var newKeyBlob = req.headers(req.headers['hpka-newkey']);
+								var newKeyReq;
+								try {
+									newKeyReq = processReqBlob(newKeyBlob);
+								} catch (e){
+									console.log('newkey parsing error, e : ' + e);
+									writeErrorRes(res, 'HPKA-NewKey cannot be parsed', 1);
+									return;
+								}
+								if (newKeyReq.actionType != 0x03) writeErrorRes(res, 'actionType must be 0x03 in both HPKA-Reqs when rotating keys', 1);
+								if (HPKAReq.username != newKeyReq.username) writeErrorRes(res, 'usernames must be the same in both requests', 1);
+								var newKeySignature = req.headers['hpka-newkeysignature'];
+								var newKeySignature2 = req.headers['hpka-newkeysignature2'];
+								//Verifying new 
+								verifySignatureWithoutProcessing(HPKAReq, newKeyBlob, newKeySignature, function(newKeySignIsValid){
+									if (newKeySignIsValid){
+										verifySignatureWithoutProcessing(newKeyReq, newKeyBlob, newKeySignature2, function(newKeySign2IsValid){
+											if (newKeySign2IsValid){
+												keyRotation(HPKAReq, newKeyReq, res);
+												return;
+											} else {
+												writeErrorRes(res, 'Self-signature on new key is invalid', 2);
+											}
+										});
+									} else {
+										writeErrorRes(res, 'Signature of new key with actual key is invalid', 2);
+									}
+								})
 							} else {
 								if (Number(HPKAReq.actionType) < 0 || Number(HPKAReq.actionType) > 4){
 									//Unknown actionType
@@ -443,7 +520,7 @@ exports.client = function(keyFilename, usernameVal, useHttpsVal){
 		throw new TypeError("Invalid key file");
 	}
 	this.request = function(options, body, actionType, callback){
-		if (actionType < 0x00 || actionType > 0x04) throw new TypeError('Invalid actionType. Must be an integer between 0 and 4.');
+		if (actionType < 0x00 || actionType > 0x03) throw new TypeError('Invalid actionType. Must be an integer between 0 and 4.');
 		if (!options.headers) options.headers = {};
 		console.log('Building the payload for ' + username);
 		buildPayload(keyRing, username, actionType, function(req, signature){

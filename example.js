@@ -1,3 +1,10 @@
+/*
+* This is a script testing different methods of the hpka module
+*
+*
+*
+*/
+
 var http = require('http');
 var fs = require('fs');
 var hpka = require('./hpka');
@@ -80,8 +87,48 @@ var registration = function(HPKAReq, res){
 	res.write(body);
 	res.end();
 };
+
+var deletion = function(HPKAReq, res){
+	if (typeof userList[HPKAReq.username] != 'object') return;
+	userList[HPKAReq.username] = null;
+	var headers = {'Content-Type': 'text/plain'};
+	var body = HPKAReq.username + ' has been deleted!';
+	headers['Content-Length'] = body.length;
+	res.writeHead(200, headers);
+	res.write(body);
+	res.end();
+
+};
+
+var keyRotation = function(HPKAReq, newKeyReq, res){
+	var headers = {'Content-Type': 'text/plain'};
+	var body;
+	var errorCode;
+	//Check that the username exists
+	if (typeof userList[HPKAReq.username] != 'object'){
+		body = 'Unregistered user';
+		errorCode = 445;
+		headers['HPKA-Error'] = 4;
+	} else {
+		//Check that the actual key is correct
+		if (checkPubKeyObjects(userList[HPKAReq.username], getPubKeyObject(HPKAReq)){
+			//Replace the actual ke by the new key
+			userList[HPKAReq.username] = getPubKeyObject(newKeyReq);
+			body = 'Keys have been rotated!';
+		} else {
+			body = 'Invalid public key'
+			errorCode = 445;
+			headers['HPKA-Error'] = 3;
+		}
+	}
+	headers['Content-Length'] = body.length;
+	res.writeHead(errorCode || 200, headers);
+	res.write(body);
+	res.end();
+};
+
 console.log('Starting the server');
-var server = http.createServer(hpka.httpMiddleware(requestHandler, loginCheck, registration, true));
+var server = http.createServer(hpka.httpMiddleware(requestHandler, loginCheck, registration, deletion, keyRotation, true));
 server.listen(2500, function(){
 	console.log('Server started');
 });
