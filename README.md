@@ -2,7 +2,7 @@
 
 ------------------------------------------------------------
 
-A Node.js implementation of the [HPKA protocol](https://github.com/Tashweesh/hpka). Acts as an [expressjs](https://github.com/visionmedia/express) middleware (as of now). A middlware for the standard http stack will come later.
+A [Node.js](http://nodejs.org) implementation of the [HPKA protocol](https://github.com/Tashweesh/hpka). Acts as an [expressjs](https://github.com/visionmedia/express) middleware or standard [HTTP](http://nodejs.org/api/http.html)/[HTTPS](http://nodejs.org/api/https.html) middlware.
 
 ## Installation
 
@@ -15,46 +15,80 @@ npm install hpka
 
 This module depends on [node-cryptopp](https://github.com/Tashweesh/node-crytopp), which itself depends on the [Crypto++](http://cryptopp.com) cryptography library. Note that if you want to use this module as an expressjs middlware, then the `express` package becomes an implicit dependency that you will install manually.
 
+## How do the middlwares work?
+
+The middlewares will help you parsing the HPKA requests and verifying the signatures of the payloads. Then, it's your job to check that the usernames and public keys sent to the server match to the records you already have (through DB queries and what not).
+
 ## Usage
 
-As said above, this module as of now acts as a express middleware. The module exposes 2 methods :
+The module exposes 5 methods :
 
-**```hpka.middleware(loginCheck, registration, strict)```**: the Expressjs middleware builder. The two parameters are functions, that aew called once the signature of the request is verified (with the public key attached to it). These functions are called to do the additional handling (like checking the DB for the right public key or register the new user) before handing the request to the correct route. These functions will receive the following parameters:
+### Server methods
 
+```hpka.middleware(loginCheck, registration, userDeletion, keyRotation, strict)```: the Expressjs middleware builder :  
 * loginCheck(HPKAReq, res, callback(Boolean)) :
 	* HPKAReq : the HPKAReq object, as descibed below
 	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, in case you want to show some error pages and what not
-	* callback(isValid) : function to be called if you didn't respond to the client. isValid should be a boolean indicating whether the user is registered and the public key is valid or not
+	* callback(isValid) : function to be called if you didn't respond to the client. isValid should be a boolean indicating whether the user is registered and the public key is valid or not. If this is used, the sever will respond using the route corresponding to the HTTP request defined in your express app.
 * registration(HPKAReq, res) :
 	* HPKAReq : the HPKAReq object, as described below
 	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, to show a welcome page (or back to the site's homepage).
-* strict : must be a boolean when defined. Defines whether it shows error message when there is a problem, or just renders the page while ignoring the authentication request. Note that this applies to all error types except a "unavailable username" error
+* userDeletion(HPKAReq, res) :
+	* HPKAReq: the HPKAReq object, as described below
+	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, allowing you confirm user deletion or send an error message
+* keyRotation(HPKAReq, rotationReq, res) :
+	* HPKAReq: the HPKAReq object, as described below, with the user's actual public key. **NOTE :** you have to check that it is really his/her actual public key
+	* rotationReq : an HPKAReq object, containing this time the new public key
+	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, allowing you to send a message to the client and what not
+* strict : must be a boolean when defined. Defines whether it shows error message when there is a problem, or just renders the page while ignoring the authentication request (like if it was normal HTTP request). Note that this applies to all error types except a "unavailable username" error.
 	
-Note that :
-
+Note that :  
 * you must use either ```res``` or ```callback``` in loginCheck to send a response to the client
 * but you **must** use ```res``` in registration to send a response to the client
 
 
-**```hpka.httpMiddlware(requestHandler, loginCheck, registartion, strict)```**: middleware building function for the standard [HTTP](http://nodejs.org/api/http.html) and [HTTPS](http://nodejs.org/api/https.html) libraries. The result of this function should be used as the ```requestHandler``` in the ```createServer``` methods of these libraries. The function receives the following parameters :  
+```hpka.httpMiddlware(requestHandler, loginCheck, registartion, userDeletion, keyRotation, strict)```: middleware building function for the standard [HTTP](http://nodejs.org/api/http.html) and [HTTPS](http://nodejs.org/api/https.html) libraries. The result of this function should be used as the ```requestHandler``` in the ```createServer``` methods of these libraries. The function receives the following parameters :  
 * requestHandler(req, res) : the request handler you would normally put in the ```createServer``` methods of the 2 default HTTP stacks
 * loginCheck(HPKAReq, res, callback(Boolean)) : 
 	* HPKAReq : the HPKAReq object, as descibed below
-	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, in case you want to show some error pages and what not
+	* res : the [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object, in case you want to show some error pages or something
 	* callback(isValid) : function to be called if you didn't respond to the client. isValid should be a boolean indicating whether the user is registered and the public key is valid or not
 * registration(HPKAReq, res) :
 	* HPKAReq : the HPKAReq object, as described below
-	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, to show a welcome page (or back to the site's homepage).
-* strict : must be a boolean when defined. Defines whether it shows error message when there is a problem, or just renders the page while ignoring the authentication request. Note that this applies to all error types except an "unavailable username" error.
+	* res : the [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object, to show a welcome page (or back to the site's homepage).
+* userDeletion(HPKAReq, res), called when a user wants to delete his/her account :
+	* HPKAReq : the HPKAReq object, as described below
+	* res : the [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object, allowing you to respond to the client or sending an error message,...
+* keyRotation(HPKAReq, rotationReq, res), called when a user wants to change his authentication key :
+	* HPKAReq: the HPKAReq object, as described below, with the user's actual public key. **NOTE :** you have to check that it is really his/her actual public key
+	* rotationReq : an HPKAReq object, containing this time the new public key
+	* res : the [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object, allowing you to send a message to the client and what not.
+* strict : must be a boolean when defined. Defines whether it shows error message when there is a problem, or just renders the page while ignoring the authentication request (like if it was a normal HTTP request). Note that this applies to all error types except an "unavailable username" error.
 
-**```hpka.client(keyFilename, username)```**: Client building method. Loads the keypair from the given filename using a [cryptopp KeyRing](https://github.com/Tashweesh/node-cryptopp#keyring). The username given to this method will be the one used in the HTTP requests generated by this client. The returned `client` object have the following method(s) :  
-* request(options, body, actionType, callback) :
+### Client methods
+
+```hpka.client(keyFilename, username)```: Client building method. Loads the keypair from the given filename using a [cryptopp KeyRing](https://github.com/Tashweesh/node-cryptopp#keyring). The username given to this method will be the one used in the HTTP requests generated by this client. The returned `client` object have the following method(s) :  
+* request(options, body, callback), send an authenticated HTTP request :
 	* options : the [HTTP](http://nodejs.org/api/http.html)/[HTTPS](http://nodejs.org/api/https.html) options object. Note that if you want to use https, you must set `options.protocol = 'https'`; otherwise, http is used
 	* body : body of the request
-	* callback : method that will be called once the response is recieved. The callback will have the [response](http://nodejs.org/api/http.html#http_http_incomingmessage) object as unique parameter
+	* callback : method that will be called once the request is sent. The callback will have the [response](http://nodejs.org/api/http.html#http_http_incomingmessage) object as unique parameter
+* registerUser(options, callback), register the user on the server :
+	* options : the [HTTP](http://nodejs.org/api/http.html)/[HTTPS](http://nodejs.org/api/https.html) options object. Note that if you want to use https, you must set `options.protocol = 'https'`; otherwise, http is used
+	* callback : method that will be called once the request is sent. The callback will have the [response](http://nodejs.org/api/http.html#http_http_incomingmessage) object as unique parameter
+* deleteUser(options, callback), delete the user's account :
+	* options : the [HTTP](http://nodejs.org/api/http.html)/[HTTPS](http://nodejs.org/api/https.html) options object. Note that if you want to use https, you must set `options.protocol = 'https'`; otherwise, http is used
+	* callback : method that will be called once the request is sent. The callback will have the [response](http://nodejs.org/api/http.html#http_http_incomingmessage) object as unique parameter
+* rotateKeys(options, newKeyPath, callback), :
+	* options : the [HTTP](http://nodejs.org/api/http.html)/[HTTPS](http://nodejs.org/api/https.html) options object. Note that if you want to use https, you must set `options.protocol = 'https'`; otherwise, http is used
+	* newKeyPath : path where the new key file is stored. That file could either be created with `hpka.createClientKey()` or [cryptopp.KeyRing](https://github.com/Tashweesh/node-cryptopp#keyring).
+	* callback : method that will be called once the request is sent. The callback will have the [response](http://nodejs.org/api/http.html#http_http_incomingmessage) object as unique parameter
 
-**```hpka.verifySignature(reqBlob, signature, callback(isValid, username, HPKAReq))```**: checks the signature of a HPKA request. To be used if you choose to manage signature verification and actionType handling by yourself
+```hpka.createClientKey(keyType, options, filename)```: creates a new keypair file  
+* keyType : must be either 'ecdsa', 'rsa' or 'dsa'
+* options : the curve name for ecdsa, the key size for RSA and RSA.
+* filename : path where the key file should be stored.
 
+```hpka.verifySignature(reqBlob, signature, callback(isValid, username, HPKAReq))```: checks the signature of a HPKA request. To be used if you choose to manage signature verification and actionType handling by yourself  
 * reqBlob : the content of the "HPKA-Req" header
 * signature : the content of the "HPKA-Signature" header
 * callback(isValid, username, HPKAReq) : a function called after the signature verification
@@ -84,6 +118,8 @@ The HPKAReq object is the result of parsing the [HPKA-Req field](https://github.
 
 #### Example
 
+For more detailed examples, have a look at [example.js](https://github.com/Tashweesh/node-hpka/blob/master/example.js) or [expressExample.js](https://github.com/Tashweesh/node-hpka/blob/master/expressExample.js).
+
 	var hpkaBuilder = require('hpka');
 	var hpkaMiddleware = hpkaBuilder.middlware(
 		function(HPKAReq, res, callback){
@@ -92,9 +128,20 @@ The HPKAReq object is the result of parsing the [HPKA-Req field](https://github.
 			//Else callback(false)
 		},
 		function(HPKAReq, res){
+			//Check that the username is not already used
 			//Save the details from HPKAReq
 			//Use res to show welcome page
 		},
+		function(HPKAReq, res){
+			//Check that the user exists and has the given public key
+			//Delete the user
+			//Respond using the res object
+		},
+		function(HPKAReq, RotationReq, res){
+			//Check that the user exists and has the given public key
+			//Update the public key for the user with the one in RotationReq
+			//Respond using the res object
+		}
 		true
 	);
 
@@ -112,4 +159,5 @@ app.use(app.router)
 ```
 
 ## License
+
 This module is released under GPLv2.

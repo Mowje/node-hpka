@@ -267,7 +267,7 @@ exports.middleware = function(loginCheck, registration, deletion, keyRotation, s
 									} else {
 										if (strict){
 											res.status(445).set('HPKA-Error', '3');
-											res.send('Invalid public key');
+											res.send('Invalid public key or unregistered user');
 										} else {
 											next();
 										}
@@ -506,7 +506,6 @@ exports.createClientKey = function(keyType, options, filename){
 		var keySize = Number(options);
 		if (Number.isNaN(keySize)) throw new TypeError('Invalid key size');
 	}
-	console.log('Saving the client key');
 	keyRing.createKeyPair(keyType, options, filename);
 	return keyRing;
 }
