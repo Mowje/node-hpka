@@ -1,6 +1,5 @@
 var cryptopp = require('cryptopp');
 var Buffer = require('buffer').Buffer;
-var fs = require('fs');
 var http = require('http');
 var https = require('https');
 
@@ -723,9 +722,6 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback){
 		buffer.write(pubKey.publicElement, offset, 'hex');
 		offset += pubKey.publicElement.length / 2;
 	}
-	var randomBytes = cryptopp.randomBytes(10);
-	buffer.write(randomBytes, offset, offset + randomBytes.length / 2, 'hex');
-	offset += 10;
 
 	var req = buffer.toString('base64');
 	callback(req);
