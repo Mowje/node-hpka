@@ -102,8 +102,8 @@ var processReqBlob = function(pubKeyBlob){
 	var actualTimestamp = Date.now();
 	//actualTimestamp -= actualTimestamp % 1000;
 	actualTimestamp = Math.floor(actualTimestamp / 1000);
-	console.log('Actual timestamp : ' + actualTimestamp);
-	console.log('Req timestamp : ' + timeStamp);
+	//console.log('Actual timestamp : ' + actualTimestamp);
+	//console.log('Req timestamp : ' + timeStamp);
 	if (actualTimestamp >= timeStamp + 120) throw new TypeError("Request is too old");
 	//Reading the username length
 	var usernameLength = buf[byteIndex];
@@ -188,8 +188,8 @@ var processReqBlob = function(pubKeyBlob){
 */
 var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callback){
 	//Checking if the key type is ECDSA
-	console.log('Parsed req : ' + JSON.stringify(req));
-	console.log('Verfying signature');
+	//console.log('Parsed req : ' + JSON.stringify(req));
+	//console.log('Verfying signature');
 	if (req.keyType == 'ecdsa'){
 		if (req.curveName.indexOf('secp') > -1){ //Checking is the curve is a prime field one
 			cryptopp.ecdsa.prime.verify(reqBlob, signature, req.point, req.curveName, 'sha1', function(isValid){
@@ -233,7 +233,7 @@ exports.middleware = function(loginCheck, registration, deletion, keyRotation, s
 	if (!(typeof strict == 'undefined' || typeof strict == 'boolean')) throw new TypeError("When 'strict' is defined, it must be a boolean");
 	var middlewareFunction = function(req, res, next){
 		if (req.get('HPKA-Req') && req.get("HPKA-Signature")){
-			console.log('HPKA Headers found');
+			//console.log('HPKA Headers found');
 			try {
 				var HPKAReqBlob = req.get("HPKA-Req"), HPKASignature = req.get("HPKA-Signature");
 				var HPKAReq;
@@ -373,9 +373,9 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 		res.end();
 	}
 	var middleware = function(req, res){
-		console.log('Headers found by the server : ' + JSON.stringify(req.headers));
+		//console.log('Headers found by the server : ' + JSON.stringify(req.headers));
 		if (req.headers['hpka-req'] && req.headers['hpka-signature']){
-			console.log('HPKA headers found');
+			//console.log('HPKA headers found');
 			try {
 				var HPKAReqBlob = req.headers['hpka-req'], HPKASignature = req.headers['hpka-signature'];
 				var HPKAReq;
@@ -391,6 +391,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 				try {
 					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, HPKASignature, function(isValid){
 						if (isValid){
+							//console.log('Signature is valid');
 							//Checking the action type and calling the right handlers
 							if (HPKAReq.actionType == 0x00){ //Authenticated HTTP request
 								loginCheck(HPKAReq, res, function(isValid){
@@ -400,7 +401,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 										requestHandler(req, res);
 									} else {
 										if (strict){
-											writeErrorRes(res, 'Invalid key', 3);
+											writeErrorRes(res, 'Invalid key or unregistered user', 3);
 										} else {
 											requestHandler(req, res);
 										}
@@ -409,14 +410,14 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 							} else if (HPKAReq.actionType == 0x01){ //Registration request
 								registration(HPKAReq, res);
 								return;
-							} else if (HPKAReq.actionType == 0x02){
-								deletion(HPKA, res);
+							} else if (HPKAReq.actionType == 0x02){ //User deletion request
+								deletion(HPKAReq, res);
 								return;
-							} else if (HPKAReq.actionType == 0x03){
+							} else if (HPKAReq.actionType == 0x03){ //Key rotation request
 								if (!req.headers['hpka-newkey']) writeErrorRes(res, 'Missing HPKA-NewKey header', 1);
 								if (!req.headers['hpka-newkeysignature']) writeErrorRes(res, 'Missing HPKA-NewKeySignature header', 1);
 								if (!req.headers['hpka-newkeysignature2']) writeErrorRes(res, 'Missing HPKA-NewKeySignature2 header', 1);
-								var newKeyBlob = req.headers(req.headers['hpka-newkey']);
+								var newKeyBlob = req.headers['hpka-newkey'];
 								var newKeyReq;
 								try {
 									newKeyReq = processReqBlob(newKeyBlob);
@@ -454,19 +455,22 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 								}
 							}
 						} else {
+							console.log('Signature is not valid');
 							if (strict){
-								writeErrorRes(res, 'Invalid signature', 2);
+								writeErrorRes(res, 'Invalid signature.', 2);
 							} else {
 								requestHandler(req, res);
 							}
 						}
 					});
 				} catch (e){
+					throw e;
 					console.log('error : ' + e);
-					writeErrorRes(res, 'Invalid signature', 2);
+					writeErrorRes(res, 'Invalid signature.', 2);
 					return;
 				}
 			} catch (e){
+				throw e;
 				console.log('error : ' + e);
 				requestHandler(req, res);
 			}
@@ -508,10 +512,9 @@ exports.createClientKey = function(keyType, options, filename){
 }
 
 //Client object builder
-exports.client = function(keyFilename, usernameVal, useHttpsVal){
+exports.client = function(keyFilename, usernameVal){
 	if (typeof usernameVal != 'string') throw new TypeError('Username must be a string');
 	var username = usernameVal
-	var useHttps = useHttpsVal;
 	var keyRing = new cryptopp.KeyRing();
 	keyRing.load(keyFilename);
 	try{
@@ -519,38 +522,98 @@ exports.client = function(keyFilename, usernameVal, useHttpsVal){
 	} catch(e){
 		throw new TypeError("Invalid key file");
 	}
-	this.request = function(options, body, actionType, callback){
-		if (actionType < 0x00 || actionType > 0x03) throw new TypeError('Invalid actionType. Must be an integer between 0 and 4.');
+
+	function stdReq(options, body, actionType, callback){
+		if (!(options && typeof options == 'object')) throw new TypeError('"options" parameter must be defined and must be an object, according to the default http(s) node modules & node-hpka documentations');
+		if (!(typeof actionType == 'number')) throw new TypeError('"actionType" parameter must be defined and must be a number');
+		if (!(actionType >= 0x00 && actionType <= 0x02)) throw new TypeError('"actionType" parameter must be 0x00 <= actionType <= 0x02 when calling stdReq(). Note that keyRotations have their methods (because they require than a simple HPKA-Req blob and its signature');
+		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
 		if (!options.headers) options.headers = {};
-		console.log('Building the payload for ' + username);
 		buildPayload(keyRing, username, actionType, function(req, signature){
-			options.headers["HPKA-Req"] = req;
-			options.headers["HPKA-Signature"] = signature;
-			if (useHttps){
-				var req = https.request(options, function(res){
-					callback(res);
-				});
-				if (body) req.write(body);
-				req.end();
+			options.headers['HPKA-Req'] = req;
+			options.headers['HPKA-Signature'] = signature;
+			var req;
+			if (options.protocol && options.protocol == 'https'){
+				options.protocol = null;
+				req = https.request(options, function(res){
+					if (callback) callback(res);
+				})
 			} else {
-				var req = http.request(options, function(res){
-					callback(res);
+				options.protocol = null;
+				req = http.request(options, function(res){
+					if (callback) callback(res);
 				});
-				if (body) req.write(body);
-				req.end();
 			}
+			if (body) req.write(body);
+			req.end();
+		})
+	}
+
+	this.request = function(options, body, callback){
+		stdReq(options, body, 0x00, callback);
+	};
+
+	this.registerUser = function(options, callback){
+		stdReq(options, undefined, 0x01, callback);
+	};
+
+	this.deleteUser = function(options, callback){
+		stdReq(options, undefined, 0x02, callback);
+	};
+
+	this.rotateKeys = function(options, newKeyPath, callback){
+		if (!(options && typeof options == 'object')) throw new TypeError('"options" parameter must be defined and must be an object, according to the default http(s) node modules & node-hpka documentations');
+		if (!(newKeyPath && typeof newKeyPath == 'string')) throw new TypeError('"newKeyPath" parameter must be a string, a path to the file containing the new key you want to use');
+		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
+		if (!options.headers) options.headers = {};
+		var newKeyRing = new cryptopp.KeyRing(newKeyPath);
+		newKeyRing.load(newKeyPath);
+		//First we build the payload with the known key and sign it
+		buildPayload(keyRing, username, 0x03, function(req1, signature1){
+			options.headers['HPKA-Req'] = req1;
+			options.headers['HPKA-Signature'] = signature1;
+			//Now we build a payload with the new key
+			buildPayloadWithoutSignature(newKeyRing, username, 0x03, function(req2){
+				options.headers['HPKA-NewKey'] = req2;
+				//Now we sign the that second payload using the keypair known to the server
+				keyRing.sign(req2, undefined, undefined, function(newKeySignature1){
+					options.headers['HPKA-NewKeySignature'] = newKeySignature1;
+					//Now we sign it again, this time using the new key
+					newKeyRing.sign(req2, undefined, undefined, function(newKeySignature2){
+						options.headers['HPKA-NewKeySignature2'] = newKeySignature2;
+						//Now we clear the "old" keyRing and replace its reference to the newKeyRing
+						keyRing.clear();
+						keyRing = newKeyRing;
+						//Now we build the HTTP/S request and send it to the server
+						var httpReq;
+						if (options.protocol && options.protocol == 'https'){
+							options.protocol = null;
+							httpReq = https.request(options, function(res){
+								callback(res);
+							});
+						} else {
+							options.protocol = null;
+							httpReq = http.request(options, function(res){
+								callback(res);
+							});
+						}
+						httpReq.end();
+					});
+				})
+			});
 		});
 	};
 };
 
-function buildPayload(keyRing, username, actionType, callback){
+function buildPayloadWithoutSignature(keyRing, username, actionType, callback){
+	if (!(keyRing && keyRing instanceof cryptopp.KeyRing)) throw new TypeError('keyRing must defined and an instance of cryptopp.KeyRing');
 	if (!(username && typeof username == 'string')) throw new TypeError('username must be a string');
 	if (username.length > 255) throw new TypeError('Username must be at most 255 bytes long');
 	if (!(actionType && typeof actionType == 'number')) actionType = 0x00;
 	if (!(actionType >= 0x00 && actionType <= 0x03)) throw new TypeError('Invalid actionType. Must be 0 <= actionType <= 3');
-	if (!(callback && typeof callback == 'function')) throw new TypeError('');
+	if (!(callback && typeof callback == 'function')) throw new TypeError('A "callback" must be given, and it must be a function');
 	var pubKey = keyRing.publicKeyInfo();
-	console.log('Pubkey used for payload : ' + JSON.stringify(pubKey));
+	//console.log('Pubkey used for payload : ' + JSON.stringify(pubKey));
 	//Calculating the buffer length depending on key type
 	var bufferLength = 0;
 	bufferLength += 1; //Version number
@@ -582,7 +645,7 @@ function buildPayload(keyRing, username, actionType, callback){
 	}
 	bufferLength += 10; //The 10 random bytes appended to the end of the payload; augments signature's entropy
 	//Building the payload
-	console.log('Req payload length : ' + bufferLength);
+	//console.log('Req payload length : ' + bufferLength);
 	var buffer = new Buffer(bufferLength);
 	var offset = 0;
 	//Writing protocol version
@@ -590,7 +653,7 @@ function buildPayload(keyRing, username, actionType, callback){
 	offset++;
 	//Writing the timestamp
 	var timestamp = Math.floor(Number(Date.now()) / 1000);
-	console.log('Timestamp at buildPayload : ' + timestamp);
+	//console.log('Timestamp at buildPayload : ' + timestamp);
 	buffer.writeInt32BE(timestamp >> 31, offset);
 	offset += 4;
 	buffer.writeInt32BE(timestamp, offset, true);
@@ -607,13 +670,6 @@ function buildPayload(keyRing, username, actionType, callback){
 		//Writing the key type
 		buffer.writeUInt8(0x01, offset);
 		offset++;
-		/*var publicKey = {};
-		console.log('pubKey.publicKey.x : ' + pubKey.publicKey.x + '\npubKey.publicKey.y : ' + pubKey.publicKey.y);
-		publicKey.x = hexDecode(pubKey.publicKey.x);
-		publicKey.y = hexDecode(pubKey.publicKey.y);*/
-		console.log('PublicKey.x.length : ' + pubKey.publicKey.x.length / 2+ '\nPublicKey.y.length : ' + pubKey.publicKey.y.length / 2);
-		/*console.log('PublicKey.x : ' + publicKey.x + '\nPublicKey.x : ' + publicKey.y);*/
-		//console.log('ECDSA params :\nPublic x : ' + publicKey.x + '\nPublic y : ' + publicKey.y);
 		//Writing publicKey.x
 		buffer.writeUInt16BE(pubKey.publicKey.x.length / 2, offset);
 		offset += 2;
@@ -672,26 +728,16 @@ function buildPayload(keyRing, username, actionType, callback){
 	buffer.write(randomBytes, offset, offset + randomBytes.length / 2, 'hex');
 	offset += 10;
 
-	console.log('Payload upon signature : ' + JSON.stringify(buffer));
 	var req = buffer.toString('base64');
-	keyRing.sign(req, undefined, undefined, function(signature){
-		console.log('Payload has been signed');
-		callback(req, signature);
+	callback(req);
+}
+
+function buildPayload(keyRing, username, actionType, callback){
+	buildPayloadWithoutSignature(keyRing, username, actionType, function(req){
+		keyRing.sign(req, undefined, undefined, function(signature){
+			callback(req, signature);
+		});
 	});
-	/*if (keyPair.keyType == 'ecdsa'){
-		//Because binary curves are not yet supported by node-cryptopp, and we checked at the beginning of this method that the user isn't using them : prime curves are used
-		cryptopp.ecdsa.prime.sign(req, keyPair.privateKey, keyPair.curveName, function(signature){
-			callback(req, signature);
-		});
-	} else if (keyPair.keyType == 'rsa'){
-		cryptopp.rsa.sign(req, keyPair.modulus, keyPair.privateExponent, keyPair.publicExponent, function(signature){
-			callback(req, signature);
-		});
-	} else {
-		cryptopp.dsa.sign(req, keyPair.primeField, keyPair.divider, keyPair.base, keyPair.privateExponent, function(signature){
-			callback(req, signature);
-		});
-	}*/
 }
 
 //I probably don't need these
