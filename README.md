@@ -19,6 +19,10 @@ This module depends on [node-cryptopp](https://github.com/Tashweesh/node-crytopp
 
 The middlewares will help you parsing the HPKA requests and verifying the signatures of the payloads. Then, it's your job to check that the usernames and public keys sent to the server match to the records you already have (through DB queries and what not).
 
+When authentication succeeds, then the `req` objects recieves the following attributes (doesn't matter whether you use the express middleware or the standard http stack) :  
+* `.username` : the username parsed in from the request
+* `.hpkareq` : the [HPKA-Req object](https://github.com/Tashweesh/node-hpka#hpkareq-object) parsed from the request
+
 ## Usage
 
 The module exposes 5 methods :
@@ -50,18 +54,18 @@ Note that :
 ```hpka.httpMiddlware(requestHandler, loginCheck, registartion, userDeletion, keyRotation, strict)```: middleware building function for the standard [HTTP](http://nodejs.org/api/http.html) and [HTTPS](http://nodejs.org/api/https.html) libraries. The result of this function should be used as the ```requestHandler``` in the ```createServer``` methods of these libraries. The function receives the following parameters :  
 * requestHandler(req, res) : the request handler you would normally put in the ```createServer``` methods of the 2 default HTTP stacks
 * loginCheck(HPKAReq, res, callback(Boolean)) : 
-	* HPKAReq : the HPKAReq object, as descibed below
+	* HPKAReq : the HPKAReq object, [as descibed below](https://github.com/Tashweesh/node-hpka#hpkareq-object)
 	* res : the [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object, in case you want to show some error pages or something
 	* callback(isValid) : function to be called if you didn't respond to the client. isValid should be a boolean indicating whether the user is registered and the public key is valid or not
 * registration(HPKAReq, res) :
-	* HPKAReq : the HPKAReq object, as described below
+	* HPKAReq : the HPKAReq object, [as described below](https://github.com/Tashweesh/node-hpka#hpkareq-object)
 	* res : the [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object, to show a welcome page (or back to the site's homepage).
 * userDeletion(HPKAReq, res), called when a user wants to delete his/her account :
-	* HPKAReq : the HPKAReq object, as described below
+	* HPKAReq : the HPKAReq object, [as described below](https://github.com/Tashweesh/node-hpka#hpkareq-object)
 	* res : the [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object, allowing you to respond to the client or sending an error message,...
 * keyRotation(HPKAReq, rotationReq, res), called when a user wants to change his authentication key :
-	* HPKAReq: the HPKAReq object, as described below, with the user's actual public key. **NOTE :** you have to check that it is really his/her actual public key
-	* rotationReq : an HPKAReq object, containing this time the new public key
+	* HPKAReq: the HPKAReq object, [as described below](https://github.com/Tashweesh/node-hpka#hpkareq-object), with the user's actual public key. **NOTE :** you have to check that it is really his/her actual public key
+	* rotationReq : an [HPKAReq object](https://github.com/Tashweesh/node-hpka#hpkareq-object), containing this time the new public key
 	* res : the [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object, allowing you to send a message to the client and what not.
 * strict : must be a boolean when defined. Defines whether it shows error message when there is a problem, or just renders the page while ignoring the authentication request (like if it was a normal HTTP request). Note that this applies to all error types except an "unavailable username" error.
 
