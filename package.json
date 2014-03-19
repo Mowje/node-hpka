@@ -18,11 +18,12 @@
     "HPKA"
   ],
   "author": "BatikhSouri",
-  "license": "GPLv2",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/Tashweesh/node-hpka/issues"
   },
   "dependencies": {
-    "cryptopp": "~0.2.0"
+    "cryptopp": "git+https://github.com/Tashweesh/node-cryptopp.git",
+    "sodium": "git+https://github.com/Tashweesh/node-sodium.git"
   }
 }

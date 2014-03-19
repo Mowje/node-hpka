@@ -1,4 +1,6 @@
 var cryptopp = require('cryptopp');
+var sodium = require('sodium');
+var fs = require('fs');
 var Buffer = require('buffer').Buffer;
 var http = require('http');
 var https = require('https');
@@ -175,6 +177,12 @@ var processReqBlob = function(pubKeyBlob){
 		req.divider = divider;
 		req.base = base;
 		req.publicElement = publicElement;
+	} else if (keyType == 8){
+		req.keyType = 'ed25519';
+		var publicKeyLength = buf.readUInt16BE(byteIndex);
+		byteIndex += 2;
+		var publicKey = buf.toString('hex', byteIndex, byteIndex + publicKeyLength);
+		req.publicKey = publicKey;
 	} else throw new TypeError('Unknown key type');
 	return req;
 };
@@ -205,6 +213,8 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callbac
 		cryptopp.dsa.verify(reqBlob, signature, req.primeField, req.divider, req.base, req.publicElement, function(isValid){
 			callback(isValid);
 		});
+	} else if (req.keyType == 'ed25519'){
+
 	} else throw new TypeError("Unknown key type");
 };
 
@@ -487,33 +497,45 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 */
 //Create a client key pair and returns its keyring
 exports.createClientKey = function(keyType, options, filename){
-	if (!(keyType == 'ecdsa' || keyType == 'dsa' || keyType == 'rsa')) throw new TypeError("Invalid key type. Must be either 'ecdsa', 'dsa' or 'rsa'");
-	var keyRing = new cryptopp.KeyRing();
-	if (keyType == 'ecdsa'){
-		//Options should be the curve name;
-		var curveId = getCurveID(options);
-		if (curveId >= 0x80) {
-			//Binary curves not supported yet by node-cryptopp
-			throw new TypeError('Unsupported curve');
+	if (!(keyType == 'ecdsa' || keyType == 'dsa' || keyType == 'rsa' || keyType == 'ed25519')) throw new TypeError("Invalid key type. Must be either 'ecdsa', 'dsa' or 'rsa'");
+	var keyRing;
+	if (keyType == 'ecdsa' || keyType == 'dsa' || keyType == 'rsa'){ //Crypto++ cases
+		keyRing = new cryptopp.KeyRing();
+		if (keyType == 'ecdsa'){
+			//Options should be the curve name;
+			var curveId = getCurveID(options);
+			if (curveId >= 0x80) {
+				//Binary curves not supported yet by node-cryptopp
+				throw new TypeError('Unsupported curve');
+			}
+		} else if (keyType == 'rsa'){
+			//Options should be key size
+			var keySize = Number(options);
+			if (Number.isNaN(keySize)) throw new TypeError('Invalid key size');
+		} else if (keyType == 'dsa'){ //DSA case
+			//Options should be key size
+			var keySize = Number(options);
+			if (Number.isNaN(keySize)) throw new TypeError('Invalid key size');
 		}
-	} else if (keyType == 'rsa'){
-		//Options should be key size
-		var keySize = Number(options);
-		if (Number.isNaN(keySize)) throw new TypeError('Invalid key size');
-	} else { //DSA case
-		//Options should be key size
-		var keySize = Number(options);
-		if (Number.isNaN(keySize)) throw new TypeError('Invalid key size');
+		keyRing.createKeyPair(keyType, options, filename);
+	} else if (keyType == 'ed25519'){ //Ed25519
+		keyRing.createKeyPair('ed25519');
 	}
-	keyRing.createKeyPair(keyType, options, filename);
 	return keyRing;
 }
 
 //Client object builder
 exports.client = function(keyFilename, usernameVal){
 	if (typeof usernameVal != 'string') throw new TypeError('Username must be a string');
-	var username = usernameVal
-	var keyRing = new cryptopp.KeyRing();
+	if (!fs.existsSync(keyFilename)) throw new TypeError('Key file not found'); //Checking that the file exists
+	var keyFileContent = fs.readFileSync(keyFilename, {encoding: 'utf8'});
+	var keyRing;
+	if (keyFileContent.indexOf('key') == 0){ //A key file produced by cryptopp begins with "key"
+		keyRing = new cryptopp.KeyRing();
+	} else if (keyFileContent[0] == 0x06){ //Checking that, according the first byte, the key is a Ed25519 one
+		keyRing = new sodium.KeyRing();
+	} else throw new TypeError('Unknown key file type');
+	var username = usernameVal;
 	keyRing.load(keyFilename);
 	try{
 		keyRing.publicKeyInfo();
@@ -564,6 +586,7 @@ exports.client = function(keyFilename, usernameVal){
 		if (!(newKeyPath && typeof newKeyPath == 'string')) throw new TypeError('"newKeyPath" parameter must be a string, a path to the file containing the new key you want to use');
 		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
 		if (!options.headers) options.headers = {};
+		if (!fs.existsSync(newKeyPath)) throw new TypeError('The key file doesn\'t exist');
 		var newKeyRing = new cryptopp.KeyRing(newKeyPath);
 		newKeyRing.load(newKeyPath);
 		//First we build the payload with the known key and sign it
@@ -696,7 +719,7 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback){
 		offset += 2;
 		buffer.write(pubKey.publicExponent, offset, 'hex');
 		offset += pubKey.publicExponent.length / 2;
-	} else {
+	} else if (pubKey.keyType == 'dsa'){
 		//Writing the key type
 		buffer.writeUInt8(0x04, offset);
 		offset++;
@@ -721,7 +744,14 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback){
 		offset += 2;
 		buffer.write(pubKey.publicElement, offset, 'hex');
 		offset += pubKey.publicElement.length / 2;
-	}
+	} else if (pubKey.keyType == 'ed25519'){
+		//Writing key type
+		buffer.writeUInt8(0x08, offset);
+		offset++;
+		//Writing public key
+		buffer.writeUInt16BE(pubKey.publicKey.length / 2, offset);
+		offset += 2;
+	} else throw new TypeError('Unknown key type : ' + pubKey.keyType);
 
 	var req = buffer.toString('base64');
 	callback(req);
@@ -729,9 +759,18 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback){
 
 function buildPayload(keyRing, username, actionType, callback){
 	buildPayloadWithoutSignature(keyRing, username, actionType, function(req){
-		keyRing.sign(req, undefined, undefined, function(signature){
-			callback(req, signature);
-		});
+		var pubKey = keyRing.publicKeyInfo();
+		var keyType = pubKey.keyType;
+		if (keyType == 'rsa' || keyType == 'dsa' || keyType == 'ecdsa'){
+			keyRing.sign(req, undefined, undefined, function(signature){
+				callback(req, signature);
+			});
+		} else if (keyType == 'ed25519'){
+			keyRing.sign(new Buffer(req, 'base64'), function(signature){
+				if (!(Buffer.isBuffer(signature) && signature.length > sodium.crypto_sign_BYTES)) throw new TypeError('Invalid signature: ' + signature);
+				callback(req, signature.toString('hex'));
+			});
+		} else throw new TypeError('Unknown key type : ' + keyType);
 	});
 }
 
