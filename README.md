@@ -47,7 +47,8 @@ The module exposes 5 methods :
 	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, allowing you to send a message to the client and what not
 * strict : must be a boolean when defined. Defines whether it shows error message when there is a problem, or just renders the page while ignoring the authentication request (like if it was normal HTTP request). Note that this applies to all error types except a "unavailable username" error.
 	
-Note that :  
+Note that :
+ 
 * you must use either ```res``` or ```callback``` in loginCheck to send a response to the client
 * but you **must** use ```res``` in registration to send a response to the client
 
@@ -148,7 +149,7 @@ For more detailed examples, have a look at [example.js](https://github.com/Tashw
 			//Check that the user exists and has the given public key
 			//Update the public key for the user with the one in RotationReq
 			//Respond using the res object
-		}
+		},
 		true
 	);
 
@@ -167,4 +168,4 @@ app.use(app.router)
 
 ## License
 
-This module is released under GPLv2.
+This module is released under MIT license.

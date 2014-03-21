@@ -1,5 +1,5 @@
 var cryptopp = require('cryptopp');
-var sodium = require('sodium');
+var sodium = require('sodium').api;
 var fs = require('fs');
 var Buffer = require('buffer').Buffer;
 var http = require('http');
@@ -189,8 +189,8 @@ var processReqBlob = function(pubKeyBlob){
 
 /*
 * req : object containing all the public key information that will be used to verify the signature
-* reqBlob : the req blob of which we will verify the signature
-* signature : the signature that we will verify, corresponding to reqBlob
+* reqBlob : the req blob of which we will verify the signature, string encoded in base64
+* signature : the signature that we will verify, corresponding to reqBlob, hex-encoded string
 * callback : callback function taking a boolean indicating the validity of the signature
 */
 var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callback){
@@ -214,7 +214,9 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callbac
 			callback(isValid);
 		});
 	} else if (req.keyType == 'ed25519'){
-
+		var signedMessage = sodium.crypto_sign_open(new Buffer(signature, 'hex'), new Buffer(req.publicKey, 'hex'));
+		if (signedMessage.toString('ascii') == reqBlob) callback(true);
+		else callback(false);
 	} else throw new TypeError("Unknown key type");
 };
 
@@ -519,8 +521,11 @@ exports.createClientKey = function(keyType, options, filename){
 		}
 		keyRing.createKeyPair(keyType, options, filename);
 	} else if (keyType == 'ed25519'){ //Ed25519
+		keyRing = new sodium.KeyRing();
 		keyRing.createKeyPair('ed25519');
+		keyRing.save(filename);
 	}
+	console.log('Generated key type : ' + keyRing.publicKeyInfo().keyType);
 	return keyRing;
 }
 
@@ -528,13 +533,20 @@ exports.createClientKey = function(keyType, options, filename){
 exports.client = function(keyFilename, usernameVal){
 	if (typeof usernameVal != 'string') throw new TypeError('Username must be a string');
 	if (!fs.existsSync(keyFilename)) throw new TypeError('Key file not found'); //Checking that the file exists
-	var keyFileContent = fs.readFileSync(keyFilename, {encoding: 'utf8'});
+	var keyFileType = new Buffer(1);
+	var fileHandle = fs.openSync(keyFilename, 'rs'); //'rs' flag for readSync
+	var bytesRead = fs.readSync(fileHandle, keyFileType, 0, 1, 0);
+	fs.closeSync(fileHandle);
+	if (bytesRead != 1) throw new Error('Bytes read should be 1, but it is : ' + bytesRead);
+	console.log('key type: ' + keyFileType.toJSON());
 	var keyRing;
-	if (keyFileContent.indexOf('key') == 0){ //A key file produced by cryptopp begins with "key"
+	if (keyFileType[0] < 0x05){ //A key file produced by cryptopp begins with "key"
+		console.log('Cryptopp keyring');
 		keyRing = new cryptopp.KeyRing();
-	} else if (keyFileContent[0] == 0x06){ //Checking that, according the first byte, the key is a Ed25519 one
+	} else if (keyFileType[0] == 0x06){ //Checking that, according the first byte, the key is a Ed25519 one
+		console.log('Sodium keyring');
 		keyRing = new sodium.KeyRing();
-	} else throw new TypeError('Unknown key file type');
+	} else throw new TypeError('Unknown key file type: ' + keyType.toJSON());
 	var username = usernameVal;
 	keyRing.load(keyFilename);
 	try{
@@ -627,7 +639,7 @@ exports.client = function(keyFilename, usernameVal){
 };
 
 function buildPayloadWithoutSignature(keyRing, username, actionType, callback){
-	if (!(keyRing && keyRing instanceof cryptopp.KeyRing)) throw new TypeError('keyRing must defined and an instance of cryptopp.KeyRing');
+	if (!(keyRing && (keyRing instanceof cryptopp.KeyRing || keyRing instanceof sodium.KeyRing))) throw new TypeError('keyRing must defined and an instance of cryptopp.KeyRing or sodium.keyRing');
 	if (!(username && typeof username == 'string')) throw new TypeError('username must be a string');
 	if (username.length > 255) throw new TypeError('Username must be at most 255 bytes long');
 	if (!(actionType && typeof actionType == 'number')) actionType = 0x00;
