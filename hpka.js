@@ -182,6 +182,7 @@ var processReqBlob = function(pubKeyBlob){
 		var publicKeyLength = buf.readUInt16BE(byteIndex);
 		byteIndex += 2;
 		var publicKey = buf.toString('hex', byteIndex, byteIndex + publicKeyLength);
+
 		req.publicKey = publicKey;
 	} else throw new TypeError('Unknown key type');
 	return req;
@@ -195,7 +196,7 @@ var processReqBlob = function(pubKeyBlob){
 */
 var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callback){
 	//Checking if the key type is ECDSA
-	//console.log('Parsed req : ' + JSON.stringify(req));
+	console.log('Parsed req : ' + JSON.stringify(req));
 	//console.log('Verfying signature');
 	if (req.keyType == 'ecdsa'){
 		if (req.curveName.indexOf('secp') > -1){ //Checking is the curve is a prime field one
@@ -215,6 +216,8 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callbac
 		});
 	} else if (req.keyType == 'ed25519'){
 		var signedMessage = sodium.crypto_sign_open(new Buffer(signature, 'hex'), new Buffer(req.publicKey, 'hex'));
+		if (typeof signedMessage === 'undefined') {callback(false); return;}
+		//Note: the signed message is a Base64 encoded string, hence the content of signedMessage buffer is the "already encoded" base64 string.
 		if (signedMessage.toString('ascii') == reqBlob) callback(true);
 		else callback(false);
 	} else throw new TypeError("Unknown key type");
@@ -538,7 +541,7 @@ exports.client = function(keyFilename, usernameVal){
 	var bytesRead = fs.readSync(fileHandle, keyFileType, 0, 1, 0);
 	fs.closeSync(fileHandle);
 	if (bytesRead != 1) throw new Error('Bytes read should be 1, but it is : ' + bytesRead);
-	console.log('key type: ' + keyFileType.toJSON());
+	//console.log('key type: ' + keyFileType.toJSON());
 	var keyRing;
 	if (keyFileType[0] < 0x05){ //A key file produced by cryptopp begins with "key"
 		console.log('Cryptopp keyring');
@@ -675,6 +678,9 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback){
 		bufferLength += pubKey.base.length / 2; //Actual base length
 		bufferLength += 2; //Public element length field
 		bufferLength += pubKey.publicElement.length / 2; //Actual public element length
+	} else if (pubKey.keyType == 'ed25519'){
+		bufferLength += 2; //Public key length field
+		bufferLength += pubKey.publicKey.length / 2; //Actual public key length
 	}
 	bufferLength += 10; //The 10 random bytes appended to the end of the payload; augments signature's entropy
 	//Building the payload
@@ -763,6 +769,8 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback){
 		//Writing public key
 		buffer.writeUInt16BE(pubKey.publicKey.length / 2, offset);
 		offset += 2;
+		buffer.write(pubKey.publicKey.toUpperCase(), offset, 'hex');
+		offset += pubKey.publicKey.length / 2;
 	} else throw new TypeError('Unknown key type : ' + pubKey.keyType);
 
 	var req = buffer.toString('base64');

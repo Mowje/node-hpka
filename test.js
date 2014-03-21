@@ -11,6 +11,9 @@ var hpka = require('./hpka');
 
 var userList = {};
 
+var testKeyType = 'ed25519';
+var testKeyOptions = 'secp256r1';
+
 //Getting the PKA info from a HPKAReq object
 function getPubKeyObject(HPKAReq){
 	//Checking that HPKAReq object is correctly formed
@@ -150,13 +153,13 @@ if (fs.existsSync(newKeyPath)) fs.unlinkSync(newKeyPath);
 console.log('Looking for a client key');
 if (!fs.existsSync(keyPath)){
 	console.log('Creating a client key');
-	keyRing = hpka.createClientKey('ecdsa', 'secp256r1', keyPath);
+	keyRing = hpka.createClientKey(testKeyType, testKeyOptions, keyPath);
 	console.log('Generated key pair : ' + JSON.stringify(keyRing.publicKeyInfo()));
 }
 
 if (!fs.existsSync(newKeyPath)){
 	console.log('Creating second client key');
-	keyRing2 = hpka.createClientKey('ecdsa', 'secp256r1', newKeyPath);
+	keyRing2 = hpka.createClientKey(testKeyType, testKeyOptions, newKeyPath);
 	console.log('Second generated key pair : ' + JSON.stringify(keyRing2.publicKeyInfo()));
 }
 
