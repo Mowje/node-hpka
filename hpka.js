@@ -603,11 +603,28 @@ exports.client = function(keyFilename, usernameVal){
 		if (!options.headers) options.headers = {};
 		if (!fs.existsSync(newKeyPath)) throw new TypeError('The key file doesn\'t exist');
 
+		var signStuff = function(keyRing, stuff, callback){
+			if (!keyRing) throw new TypeError('KeyRing has not been defined');
+			if (!stuff) throw new TypeError('stuff has not been defined');
+			if (!(callback && typeof callback == 'function')) throw new TypeError('Callback must be a function');
+			
+			if (keyRing instanceof cryptopp.KeyRing){
+				keyRing.sign(stuff, undefined, undefined, callback);
+			} else if (keyRing instanceof sodium.KeyRing) {
+				var _stuff;
+				if (!Buffer.isBuffer(stuff)) _stuff = new Buffer(stuff);
+				else _stuff = stuff;
+				keyRing.sign(_stuff, function(signature){
+					callback(signature.toString('hex'));
+				});
+			} else throw new TypeError('Unknown KeyRing type');
+		};
+
 		var newKeyRing;
 
-		//Checking the key type before loading it into a keyring
+		//Checking the key type before loading the NEW key in the keyring
 		var keyFileType = new Buffer(1);
-		var fileHandle = fs.openSync(newKeyPath);
+		var fileHandle = fs.openSync(newKeyPath, 'rs');
 		var bytesRead = fs.readSync(fileHandle, keyFileType, 0, 1, 0);
 		fs.closeSync(fileHandle);
 		if (bytesRead != 1) throw new Error('Error while reading the key file to determine the key type. Bytes read : ' + bytesRead);
@@ -619,76 +636,39 @@ exports.client = function(keyFilename, usernameVal){
 		} else throw new TypeError('Unknown key file type : ' + keyFileType.toJSON());
 		newKeyRing.load(newKeyPath);
 
-		if (keyFileType[0] < 0x05){ //Cryptopp keyring
-			//First we build the payload with the known key and sign it
-			buildPayload(keyRing, username, 0x03, function(req1, signature1){
-				options.headers['HPKA-Req'] = req1;
-				options.headers['HPKA-Signature'] = signature1;
-				//Now we build a payload with the new key
-				buildPayloadWithoutSignature(newKeyRing, username, 0x03, function(req2){
-					options.headers['HPKA-NewKey'] = req2;
-					//Now we sign the that second payload using the keypair known to the server
-					keyRing.sign(req2, undefined, undefined, function(newKeySignature1){
-						options.headers['HPKA-NewKeySignature'] = newKeySignature1;
-						//Now we sign it again, this time using the new key
-						newKeyRing.sign(req2, undefined, undefined, function(newKeySignature2){
-							options.headers['HPKA-NewKeySignature2'] = newKeySignature2;
-							//Now we clear the "old" keyRing and replace its reference to the newKeyRing
-							keyRing.clear();
-							keyRing = newKeyRing;
-							//Now we build the HTTP/S request and send it to the server
-							var httpReq;
-							if (options.protocol && options.protocol == 'https'){
-								options.protocol = null;
-								httpReq = https.request(options, function(res){
-									callback(res);
-								});
-							} else {
-								options.protocol = null;
-								httpReq = http.request(options, function(res){
-									callback(res);
-								});
-							}
-							httpReq.end();
-						});
-					})
-				});
-			});
-		} else { //Sodium keyring
-			//First we build the payload with the known key and sign it
-			buildPayload(keyRing, username, 0x03, function(req1, signature1){
-				options.headers['HPKA-Req'] = req1;
-				options.headers['HPKA-Signature'] = signature1;
-				//Now we build a payload with the new key
-				buildPayloadWithoutSignature(newKeyRing, username, 0x03, function(req2){
-					options.headers['HPKA-NewKey'] = req2;
-					keyRing.sign(new Buffer(req2), function(newKeySignature1){
-						options.headers['HPKA-NewKeySignature'] = newKeySignature1.toString('hex');
-
-					});
-				});
-			});
-		}
-
-		//Build the payload with the known key and self sign it
+		//First we build the payload with the known key and sign it
 		buildPayload(keyRing, username, 0x03, function(req1, signature1){
 			options.headers['HPKA-Req'] = req1;
 			options.headers['HPKA-Signature'] = signature1;
-			if (keyFileType[0] < 0x05){ //Cryptopp
-				buildPayloadWithoutSignature(newKeyRing, username, 0x03, function(req2){
-					options.header['HPKA-NewKey'] = req2;
-					
-				});
-			} else {
-				//Now we build a payload with the new key
-				buildPayloadWithoutSignature(newKeyRing, username, 0x03, function(req2){
-					options.headers['HPKA-NewKey'] = req2;
-					keyRing.sign(new Buffer(req2), function(newKeySignature1){
-						options.headers['HPKA-NewKeySignature'] = newKeySignature1.toString('hex');
-						
+			//Now we build a payload with the new key
+			buildPayloadWithoutSignature(newKeyRing, username, 0x03, function(req2){
+				options.headers['HPKA-NewKey'] = req2;
+				//Now we sign the that second payload using the keypair known to the server
+				signStuff(keyRing, req2, function(newKeySignature1){
+					options.headers['HPKA-NewKeySignature'] = newKeySignature1;
+					//Now we sign it again, this time using the new key
+					signStuff(newKeyRing, req2, function(newKeySignature2){
+						options.headers['HPKA-NewKeySignature2'] = newKeySignature2;
+						//Now we clear the "old" keyRing and replace its reference to the newKeyRing
+						keyRing.clear();
+						keyRing = newKeyRing;
+						//Now we build the HTTP/S request and send it to the server
+						var httpReq;
+						if (options.protocol && options.protocol == 'https'){
+							options.protocol = null;
+							httpReq = https.request(options, function(res){
+								callback(res);
+							});
+						} else {
+							options.protocol = null;
+							httpReq = http.request(options, function(res){
+								callback(res);
+							});
+						}
+						httpReq.end();
 					});
-				});
-			}
+				})
+			});
 		});
 	};
 };
