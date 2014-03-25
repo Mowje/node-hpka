@@ -7,12 +7,19 @@
 
 var http = require('http');
 var fs = require('fs');
+var assert = require('assert');
 var hpka = require('./hpka');
 
 var userList = {};
+var testUsername = 'test';
 
 var testKeyType = 'ed25519';
-var testKeyOptions = 'secp256r1';
+var testKeyOptions = {
+	ed25519: undefined,
+	ecdsa: 'secp256k1',
+	dsa: 2048,
+	rsa: 2048
+};
 
 //Getting the PKA info from a HPKAReq object
 function getPubKeyObject(HPKAReq){
@@ -45,22 +52,22 @@ function checkPubKeyObjects(pubKey1, pubKey2){
 	if (!(typeof pubKey1 == 'object' && typeof pubKey2 == 'object')) throw new TypeError('Parameters must be objects');
 	if (pubKey1.keyType != pubKey2.keyType) return false;
 	if (pubKey1.keyType == "ecdsa"){
-		console.log('Common type : ecdsa');
+		//console.log('Common type : ecdsa');
 		if (pubKey1.curveName != pubKey2.curveName) return false;
 		if (pubKey1.point.x != pubKey2.point.x) return false;
 		if (pubKey1.point.y != pubKey2.point.y) return false;
 	} else if (pubKey1.keyType == "rsa"){
-		console.log('Common type : rsa');
+		//console.log('Common type : rsa');
 		if (pubKey1.modulus != pubKey2.modulus) return false;
 		if (pubKey1.publicExponent != pubKey2.publicExponent) return false;
 	} else if (pubKey1.keyType == "dsa"){
-		console.log('Common type : dsa');
+		//console.log('Common type : dsa');
 		if (pubKey1.primeField != pubKey2.primeField) return false;
 		if (pubKey1.divider != pubKey2.divider) return false;
 		if (pubKey1.base != pubKey2.base) return false;
 		if (pubKey1.publicElement != pubKey2.publicElement) return false;
 	} else if (pubKey1.keyType == 'ed25519'){
-		console.log('Common type : ed25519');
+		//console.log('Common type : ed25519');
 		if (pubKey1.publicKey != pubKey2.publicKey) return false;
 	} else throw new TypeError('Invalid keyType');
 	return true;
@@ -70,10 +77,10 @@ var requestHandler = function(req, res){
 	var headers = {'Content-Type': 'text/plain'};
 	var body;
 	if (req.username){
-		console.log(req.method + ' ' + req.url + ' authenticated request by ' + req.username);
+		//console.log(req.method + ' ' + req.url + ' authenticated request by ' + req.username);
 		body = 'Authenticated as : ' + req.username;
 	} else {
-		console.log(req.method + ' ' + req.url + ' anonymous request');
+		//console.log(req.method + ' ' + req.url + ' anonymous request');
 		body = 'Anonymous user';
 	}
 	headers['Content-Length'] = body.length;
@@ -136,10 +143,10 @@ var keyRotation = function(HPKAReq, newKeyReq, res){
 	res.end();
 };
 
-console.log('Starting the server');
+//console.log('Starting the server');
 var server = http.createServer(hpka.httpMiddleware(requestHandler, loginCheck, registration, deletion, keyRotation, true));
 server.listen(2500, function(){
-	console.log('Server started');
+	//console.log('Server started');
 });
 
 var keyPath = './hpkaclient.key';
@@ -150,17 +157,17 @@ var keyRing2;
 if (fs.existsSync(keyPath)) fs.unlinkSync(keyPath);
 if (fs.existsSync(newKeyPath)) fs.unlinkSync(newKeyPath);
 
-console.log('Looking for a client key');
+//console.log('Looking for a client key');
 if (!fs.existsSync(keyPath)){
-	console.log('Creating a client key');
-	keyRing = hpka.createClientKey(testKeyType, testKeyOptions, keyPath);
-	console.log('Generated key pair : ' + JSON.stringify(keyRing.publicKeyInfo()));
+	//console.log('Creating a client key');
+	keyRing = hpka.createClientKey(testKeyType, testKeyOptions[testKeyType], keyPath);
+	//console.log('Generated key pair : ' + JSON.stringify(keyRing.publicKeyInfo()));
 }
 
 if (!fs.existsSync(newKeyPath)){
-	console.log('Creating second client key');
-	keyRing2 = hpka.createClientKey(testKeyType, testKeyOptions, newKeyPath);
-	console.log('Second generated key pair : ' + JSON.stringify(keyRing2.publicKeyInfo()));
+	//console.log('Creating second client key');
+	keyRing2 = hpka.createClientKey(testKeyType, testKeyOptions[testKeyType], newKeyPath);
+	//console.log('Second generated key pair : ' + JSON.stringify(keyRing2.publicKeyInfo()));
 }
 
 var reqOptions = {
@@ -171,37 +178,43 @@ var reqOptions = {
 };
 
 //Sorry for the callback hell. :/ I just wanted to finish that stuff so I can code some "more interesting stuff" than a testing script.
-console.log('Creating a client instance and loading the key');
-var client = new hpka.client(keyPath, 'test');
+var client = new hpka.client(keyPath, testUsername);
 //First making an unauthenticated request
 var unauthReq = http.request(reqOptions, function(res){
+	assert.equal(res.statusCode, 200, 'On successful anonymous requests, status code must be 200');
 	res.on('data', function(data){
-		console.log('Data recieved from server (unauthenticated req) : ' + data);
+		assert.equal(data, 'Anonymous user', 'Unexpected string from server : ' + data);
 		//Signing up
 		client.registerUser(reqOptions, function(res){
+			assert.equal(res.statusCode, 200, 'On successful registration, status code must be 200');
 			res.on('data', function(data){
-				console.log('Received data from server (on registration) : ' + data);
+				assert.equal(data, 'Welcome ' + testUsername + ' !', 'Unexpected message on registration : ' + data);
 				//Autheticated HTTP request
 				client.request(reqOptions, undefined, function(res2){
+					assert.equal(res2.statusCode, 200, 'Successful autheticated request must have status code 200');
 					res2.on('data', function(data){
-						console.log('Received data from server (on auth request) : ' + data);
+						assert.equal(data, 'Authenticated as : ' + testUsername, 'Unexpected message on authenticated request : ' + data);
 						//Rotating keys
-						console.log('Rotating keys');
 						client.rotateKeys(reqOptions, newKeyPath, function(res3){
+							assert.equal(res3.statusCode, 200, 'Successful key rotation must have status code 200');
 							res3.on('data', function(data){
-								console.log('Received data from server (on key rotation) : ' + data);
+								assert.equal(data, 'Keys have been rotated!', 'Unexpected message on key rotation : ' + data);
 								//Checking that the key rotation was done properly by sending an authenticated request using the new key
 								client.request(reqOptions, undefined, function(res4){
+									assert.equal(res4.statusCode, 200, 'Successful authenticated request have status code 200');
 									res4.on('data', function(data){
-										console.log('Received data from server (on auth request after key rotation) : ' + data);
+										assert.equal(data, 'Authenticated as : ' + testUsername, 'Unexpected message on authenticated request : ' + data);
 										//Deleting user
 										client.deleteUser(reqOptions, function(res5){
+											assert.equal(res5.statusCode, 200, 'Successful account deletion must have status code 200');
 											res5.on('data', function(data){
-												console.log('Received data from server (on user deletion) : ' + data);
+												assert.equal(data, testUsername + ' has been deleted!', 'Unexpected deletion message : ' + data);
 												//Trying to do an authenticated request in order to trigger an error (since the user has just been deleted)
 												client.request(reqOptions, undefined, function(res6){
+													assert.equal(res6.statusCode, 445, 'Status code must be 445, but it\'s ' + res6.statusCode + ' instead');
 													res6.on('data', function(data){
-														console.log('Received data from server (auth request after user deletion) : ' + data);
+														assert.equal(data, 'Invalid key or unregistered user', 'The user didn\'t seem to be deleted, even a HPKA delete request was sent');
+														//console.log('Received data from server (auth request after user deletion) : ' + data);
 														process.exit();
 													});
 												});

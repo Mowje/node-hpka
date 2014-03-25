@@ -196,7 +196,7 @@ var processReqBlob = function(pubKeyBlob){
 */
 var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callback){
 	//Checking if the key type is ECDSA
-	console.log('Parsed req : ' + JSON.stringify(req));
+	//console.log('Parsed req : ' + JSON.stringify(req));
 	//console.log('Verfying signature');
 	if (req.keyType == 'ecdsa'){
 		if (req.curveName.indexOf('secp') > -1){ //Checking is the curve is a prime field one
@@ -369,7 +369,7 @@ exports.middleware = function(loginCheck, registration, deletion, keyRotation, s
 				next();
 			}
 		} else {
-			console.log('HPKA headers not found');
+			//console.log('HPKA headers not found');
 			res.set('HPKA-Available', '1');
 			next();
 		}
@@ -489,7 +489,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 				requestHandler(req, res);
 			}
 		} else {
-			console.log('HPKA headers not found');
+			//console.log('HPKA headers not found');
 			res.setHeader('HPKA-Available', '1');
 			requestHandler(req, res);
 		}
@@ -528,7 +528,7 @@ exports.createClientKey = function(keyType, options, filename){
 		keyRing.createKeyPair('ed25519');
 		keyRing.save(filename);
 	}
-	console.log('Generated key type : ' + keyRing.publicKeyInfo().keyType);
+	//console.log('Generated key type : ' + keyRing.publicKeyInfo().keyType);
 	return keyRing;
 }
 
