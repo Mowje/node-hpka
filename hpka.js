@@ -1,5 +1,5 @@
 var cryptopp = require('cryptopp');
-var sodium = require('sodium').api;
+var sodium = require('sodium');
 var fs = require('fs');
 var Buffer = require('buffer').Buffer;
 var http = require('http');
@@ -215,7 +215,7 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callbac
 			callback(isValid);
 		});
 	} else if (req.keyType == 'ed25519'){
-		var signedMessage = sodium.crypto_sign_open(new Buffer(signature, 'hex'), new Buffer(req.publicKey, 'hex'));
+		var signedMessage = sodium.api.crypto_sign_open(new Buffer(signature, 'hex'), new Buffer(req.publicKey, 'hex'));
 		if (typeof signedMessage === 'undefined') {callback(false); return;}
 		//Note: the signed message is a Base64 encoded string, hence the content of signedMessage buffer is the "already encoded" base64 string.
 		if (signedMessage.toString('ascii') == reqBlob) callback(true);
@@ -540,16 +540,16 @@ exports.client = function(keyFilename, usernameVal){
 	var fileHandle = fs.openSync(keyFilename, 'rs'); //'rs' flag for readSync
 	var bytesRead = fs.readSync(fileHandle, keyFileType, 0, 1, 0);
 	fs.closeSync(fileHandle);
-	if (bytesRead != 1) throw new Error('Bytes read should be 1, but it is : ' + bytesRead);
+	if (bytesRead != 1) throw new Error('Error while reading the key file to determine the key type. Bytes read : ' + bytesRead);
 	//console.log('key type: ' + keyFileType.toJSON());
 	var keyRing;
 	if (keyFileType[0] < 0x05){ //A key file produced by cryptopp begins with "key"
-		console.log('Cryptopp keyring');
+		//console.log('Cryptopp keyring');
 		keyRing = new cryptopp.KeyRing();
 	} else if (keyFileType[0] == 0x06){ //Checking that, according the first byte, the key is a Ed25519 one
-		console.log('Sodium keyring');
+		//console.log('Sodium keyring');
 		keyRing = new sodium.KeyRing();
-	} else throw new TypeError('Unknown key file type: ' + keyType.toJSON());
+	} else throw new TypeError('Unknown key file type: ' + keyFileType.toJSON());
 	var username = usernameVal;
 	keyRing.load(keyFilename);
 	try{
@@ -602,47 +602,99 @@ exports.client = function(keyFilename, usernameVal){
 		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
 		if (!options.headers) options.headers = {};
 		if (!fs.existsSync(newKeyPath)) throw new TypeError('The key file doesn\'t exist');
-		var newKeyRing = new cryptopp.KeyRing(newKeyPath);
+
+		var newKeyRing;
+
+		//Checking the key type before loading it into a keyring
+		var keyFileType = new Buffer(1);
+		var fileHandle = fs.openSync(newKeyPath);
+		var bytesRead = fs.readSync(fileHandle, keyFileType, 0, 1, 0);
+		fs.closeSync(fileHandle);
+		if (bytesRead != 1) throw new Error('Error while reading the key file to determine the key type. Bytes read : ' + bytesRead);
+
+		if (keyFileType[0] < 0x05){ //Then, cryptopp keyring
+			newKeyRing = new cryptopp.KeyRing();
+		} else if (keyFileType[0] == 0x06) { //Then, sodium keyring
+			newKeyRing = new sodium.KeyRing();
+		} else throw new TypeError('Unknown key file type : ' + keyFileType.toJSON());
 		newKeyRing.load(newKeyPath);
-		//First we build the payload with the known key and sign it
+
+		if (keyFileType[0] < 0x05){ //Cryptopp keyring
+			//First we build the payload with the known key and sign it
+			buildPayload(keyRing, username, 0x03, function(req1, signature1){
+				options.headers['HPKA-Req'] = req1;
+				options.headers['HPKA-Signature'] = signature1;
+				//Now we build a payload with the new key
+				buildPayloadWithoutSignature(newKeyRing, username, 0x03, function(req2){
+					options.headers['HPKA-NewKey'] = req2;
+					//Now we sign the that second payload using the keypair known to the server
+					keyRing.sign(req2, undefined, undefined, function(newKeySignature1){
+						options.headers['HPKA-NewKeySignature'] = newKeySignature1;
+						//Now we sign it again, this time using the new key
+						newKeyRing.sign(req2, undefined, undefined, function(newKeySignature2){
+							options.headers['HPKA-NewKeySignature2'] = newKeySignature2;
+							//Now we clear the "old" keyRing and replace its reference to the newKeyRing
+							keyRing.clear();
+							keyRing = newKeyRing;
+							//Now we build the HTTP/S request and send it to the server
+							var httpReq;
+							if (options.protocol && options.protocol == 'https'){
+								options.protocol = null;
+								httpReq = https.request(options, function(res){
+									callback(res);
+								});
+							} else {
+								options.protocol = null;
+								httpReq = http.request(options, function(res){
+									callback(res);
+								});
+							}
+							httpReq.end();
+						});
+					})
+				});
+			});
+		} else { //Sodium keyring
+			//First we build the payload with the known key and sign it
+			buildPayload(keyRing, username, 0x03, function(req1, signature1){
+				options.headers['HPKA-Req'] = req1;
+				options.headers['HPKA-Signature'] = signature1;
+				//Now we build a payload with the new key
+				buildPayloadWithoutSignature(newKeyRing, username, 0x03, function(req2){
+					options.headers['HPKA-NewKey'] = req2;
+					keyRing.sign(new Buffer(req2), function(newKeySignature1){
+						options.headers['HPKA-NewKeySignature'] = newKeySignature1.toString('hex');
+
+					});
+				});
+			});
+		}
+
+		//Build the payload with the known key and self sign it
 		buildPayload(keyRing, username, 0x03, function(req1, signature1){
 			options.headers['HPKA-Req'] = req1;
 			options.headers['HPKA-Signature'] = signature1;
-			//Now we build a payload with the new key
-			buildPayloadWithoutSignature(newKeyRing, username, 0x03, function(req2){
-				options.headers['HPKA-NewKey'] = req2;
-				//Now we sign the that second payload using the keypair known to the server
-				keyRing.sign(req2, undefined, undefined, function(newKeySignature1){
-					options.headers['HPKA-NewKeySignature'] = newKeySignature1;
-					//Now we sign it again, this time using the new key
-					newKeyRing.sign(req2, undefined, undefined, function(newKeySignature2){
-						options.headers['HPKA-NewKeySignature2'] = newKeySignature2;
-						//Now we clear the "old" keyRing and replace its reference to the newKeyRing
-						keyRing.clear();
-						keyRing = newKeyRing;
-						//Now we build the HTTP/S request and send it to the server
-						var httpReq;
-						if (options.protocol && options.protocol == 'https'){
-							options.protocol = null;
-							httpReq = https.request(options, function(res){
-								callback(res);
-							});
-						} else {
-							options.protocol = null;
-							httpReq = http.request(options, function(res){
-								callback(res);
-							});
-						}
-						httpReq.end();
+			if (keyFileType[0] < 0x05){ //Cryptopp
+				buildPayloadWithoutSignature(newKeyRing, username, 0x03, function(req2){
+					options.header['HPKA-NewKey'] = req2;
+					
+				});
+			} else {
+				//Now we build a payload with the new key
+				buildPayloadWithoutSignature(newKeyRing, username, 0x03, function(req2){
+					options.headers['HPKA-NewKey'] = req2;
+					keyRing.sign(new Buffer(req2), function(newKeySignature1){
+						options.headers['HPKA-NewKeySignature'] = newKeySignature1.toString('hex');
+						
 					});
-				})
-			});
+				});
+			}
 		});
 	};
 };
 
 function buildPayloadWithoutSignature(keyRing, username, actionType, callback){
-	if (!(keyRing && (keyRing instanceof cryptopp.KeyRing || keyRing instanceof sodium.KeyRing))) throw new TypeError('keyRing must defined and an instance of cryptopp.KeyRing or sodium.keyRing');
+	if (!(keyRing && (keyRing instanceof cryptopp.KeyRing || keyRing instanceof sodium.KeyRing))) throw new TypeError('keyRing must defined and an instance of cryptopp.KeyRing or sodium.KeyRing');
 	if (!(username && typeof username == 'string')) throw new TypeError('username must be a string');
 	if (username.length > 255) throw new TypeError('Username must be at most 255 bytes long');
 	if (!(actionType && typeof actionType == 'number')) actionType = 0x00;
@@ -779,6 +831,7 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback){
 
 function buildPayload(keyRing, username, actionType, callback){
 	buildPayloadWithoutSignature(keyRing, username, actionType, function(req){
+		//Note : req is already base64 encoded at this point...
 		var pubKey = keyRing.publicKeyInfo();
 		var keyType = pubKey.keyType;
 		if (keyType == 'rsa' || keyType == 'dsa' || keyType == 'ecdsa'){
@@ -786,8 +839,8 @@ function buildPayload(keyRing, username, actionType, callback){
 				callback(req, signature);
 			});
 		} else if (keyType == 'ed25519'){
-			keyRing.sign(new Buffer(req, 'base64'), function(signature){
-				if (!(Buffer.isBuffer(signature) && signature.length > sodium.crypto_sign_BYTES)) throw new TypeError('Invalid signature: ' + signature);
+			keyRing.sign(new Buffer(req), function(signature){
+				if (!(Buffer.isBuffer(signature) && signature.length > sodium.api.crypto_sign_BYTES)) throw new TypeError('Invalid signature: ' + signature);
 				callback(req, signature.toString('hex'));
 			});
 		} else throw new TypeError('Unknown key type : ' + keyType);

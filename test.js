@@ -186,6 +186,7 @@ var unauthReq = http.request(reqOptions, function(res){
 					res2.on('data', function(data){
 						console.log('Received data from server (on auth request) : ' + data);
 						//Rotating keys
+						console.log('Rotating keys');
 						client.rotateKeys(reqOptions, newKeyPath, function(res3){
 							res3.on('data', function(data){
 								console.log('Received data from server (on key rotation) : ' + data);
