@@ -13,7 +13,24 @@ npm install hpka
 
 ## Dependencies
 
-This module depends on [node-cryptopp](https://github.com/Tashweesh/node-crytopp), which itself depends on the [Crypto++](http://cryptopp.com) cryptography library. Note that if you want to use this module as an expressjs middlware, then the `express` package becomes an implicit dependency that you will install manually.
+As of v0.2.0, this modules doesn't have mandatory dependencies (ie, they are not listed in package.json). It depends on which key types you want to support. You need :
+
+* [cryptopp](https://github.com/Tashweesh/node-cryptopp.git) if you want to support requests with ECDSA, RSA or DSA keys
+* [sodium](https://github.com/Tashweesh/node-sodium.git) if you want to support requests with Ed25519 keys
+
+These dependencies don't necessarily need to be installed locally for the module, but [could be used in a higher level of the "node_modules" folder](http://nodejs.org/api/modules.html#modules_loading_from_node_modules_folders)
+
+## How to install dependencies
+
+For `cryptopp`:
+
+	npm install git+https://github.com/Tashweesh/node-cryptopp.git --save
+
+For `sodium`:
+
+	npm install git+https://github.com/Tashweesh/node-sodium.git --save
+
+As mentionned earlier, these modules can be installed either as a dependency of this module (ie, going to the folder containing the HPKA code and installing the dependencies there) or they could installed as a "normal" dependency of your application.
 
 ## How do the middlwares work?
 
@@ -25,25 +42,31 @@ When authentication succeeds, then the `req` objects recieves the following attr
 
 ## Usage
 
-The module exposes 5 methods :
+The module exposes 6 methods :
+
+```hpka.supportedAlgorithms()``` : Returns an array containing the signature algorithms supported, depending on what crypto modules are installed
 
 ### Server methods
 
-```hpka.middleware(loginCheck, registration, userDeletion, keyRotation, strict)```: the Expressjs middleware builder :
+```hpka.expressMiddleware(loginCheck, registration, userDeletion, keyRotation, strict)```: the Expressjs middleware builder :
 
-* loginCheck(HPKAReq, res, callback(Boolean)) :
+* loginCheck(HPKAReq, req, res, callback(Boolean)) :
 	* HPKAReq : the HPKAReq object, as descibed below
+	* req : the [expressjs req](http://expressjs.com/api.html#req.params) object, in case you want to you know what was the route requested by the client
 	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, in case you want to show some error pages and what not
 	* callback(isValid) : function to be called if you didn't respond to the client. isValid should be a boolean indicating whether the user is registered and the public key is valid or not. If this is used, the sever will respond using the route corresponding to the HTTP request defined in your express app.
-* registration(HPKAReq, res) :
+* registration(HPKAReq, req, res) :
 	* HPKAReq : the HPKAReq object, as described below
+	* req : the [expressjs req](http://expressjs.com/api.html#req.params) object, in case you want to you know what was the route requested by the client.
 	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, to show a welcome page (or back to the site's homepage).
-* userDeletion(HPKAReq, res) :
+* userDeletion(HPKAReq, req, res) :
 	* HPKAReq: the HPKAReq object, as described below
+	* req : the [expressjs req](http://expressjs.com/api.html#req.params) object, in case you want to you know what was the route requested by the client.
 	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, allowing you confirm user deletion or send an error message
-* keyRotation(HPKAReq, rotationReq, res) :
+* keyRotation(HPKAReq, rotationReq, req, res) :
 	* HPKAReq: the HPKAReq object, as described below, with the user's actual public key. **NOTE :** you have to check that it is really his/her actual public key
 	* rotationReq : an HPKAReq object, containing this time the new public key
+	* req : the [expressjs req](http://expressjs.com/api.html#req.params) object, in case you want to you know what was the route requested by the client
 	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, allowing you to send a message to the client and what not
 * strict : must be a boolean when defined. Defines whether it shows error message when there is a problem, or just renders the page while ignoring the authentication request (like if it was normal HTTP request). Note that this applies to all error types except a "unavailable username" error.
 	
@@ -58,17 +81,21 @@ Note that :
 * requestHandler(req, res) : the request handler you would normally put in the ```createServer``` methods of the 2 default HTTP stacks
 * loginCheck(HPKAReq, res, callback(Boolean)) : 
 	* HPKAReq : the HPKAReq object, [as descibed below](https://github.com/Tashweesh/node-hpka#hpkareq-object)
+	* req : the [request](http://nodejs.org/api/http.html#http_http_incomingmessage) object, in case you want to know which path was requested by the user for example
 	* res : the [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object, in case you want to show some error pages or something
 	* callback(isValid) : function to be called if you didn't respond to the client. isValid should be a boolean indicating whether the user is registered and the public key is valid or not
-* registration(HPKAReq, res) :
+* registration(HPKAReq, req, res) :
 	* HPKAReq : the HPKAReq object, [as described below](https://github.com/Tashweesh/node-hpka#hpkareq-object)
+	* req : the [request](http://nodejs.org/api/http.html#http_http_incomingmessage) object, in case you want to know which path was requested by the user for example
 	* res : the [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object, to show a welcome page (or back to the site's homepage).
-* userDeletion(HPKAReq, res), called when a user wants to delete his/her account :
+* userDeletion(HPKAReq, req, res), called when a user wants to delete his/her account :
 	* HPKAReq : the HPKAReq object, [as described below](https://github.com/Tashweesh/node-hpka#hpkareq-object)
+	* req : the [request](http://nodejs.org/api/http.html#http_http_incomingmessage) object, in case you want to know which path was requested by the user for example
 	* res : the [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object, allowing you to respond to the client or sending an error message,...
-* keyRotation(HPKAReq, rotationReq, res), called when a user wants to change his authentication key :
+* keyRotation(HPKAReq, rotationReq, req, res), called when a user wants to change his authentication key :
 	* HPKAReq: the HPKAReq object, [as described below](https://github.com/Tashweesh/node-hpka#hpkareq-object), with the user's actual public key. **NOTE :** you have to check that it is really his/her actual public key
 	* rotationReq : an [HPKAReq object](https://github.com/Tashweesh/node-hpka#hpkareq-object), containing this time the new public key
+	* req : the [request](http://nodejs.org/api/http.html#http_http_incomingmessage) object, in case you want to know which path was requested by the user for example
 	* res : the [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object, allowing you to send a message to the client and what not.
 * strict : must be a boolean when defined. Defines whether it shows error message when there is a problem, or just renders the page while ignoring the authentication request (like if it was a normal HTTP request). Note that this applies to all error types except an "unavailable username" error.
 
@@ -110,6 +137,7 @@ The HPKAReq object is the result of parsing the [HPKA-Req field](https://github.
 
 * username: a string
 * actionType : a number, as defined in the spec
+* err : a string, defined only if an error occured. As of now, it is only defined if a request with an ECDSA, RSA or DSA key comes in and `cryptopp` is not insalled (Same thing for Ed25519 and `sodium` respectively)
 * keyType : a string (either "ecdsa", "rsa" or "dsa")
 * In case of keyType == "ecdsa"
 	* point : the public ECDSA point, which has :
@@ -122,7 +150,9 @@ The HPKAReq object is the result of parsing the [HPKA-Req field](https://github.
 	* primeField : a hex string of the DSA prime field
 	* divider : a hex string of the DSA divider
 	* base : a hex string of the DSA base
-	* publicElement : a hex string of the public DSA element 
+	* publicElement : a hex string of the public DSA element
+* In case of keyType == "ed25519"
+	* publicKey : a hex encoded string of the public key
 
 #### Example
 

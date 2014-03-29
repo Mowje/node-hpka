@@ -1,6 +1,6 @@
 {
   "name": "hpka",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Server and client methods to enable HPKA into your app",
   "main": "hpka.js",
   "scripts": {
@@ -21,9 +21,5 @@
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/Tashweesh/node-hpka/issues"
-  },
-  "dependencies": {
-    "cryptopp": "git+https://github.com/Tashweesh/node-cryptopp.git",
-    "sodium": "git+https://github.com/Tashweesh/node-sodium.git"
   }
 }

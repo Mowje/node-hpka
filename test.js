@@ -89,12 +89,12 @@ var requestHandler = function(req, res){
 	res.end();
 };
 
-var loginCheck = function(HPKAReq, res, callback){
+var loginCheck = function(HPKAReq, req, res, callback){
 	if (userList[HPKAReq.username] && typeof userList[HPKAReq.username] == 'object' && checkPubKeyObjects(getPubKeyObject(HPKAReq), userList[HPKAReq.username])) callback(true);
 	else callback(false);
 };
 
-var registration = function(HPKAReq, res){
+var registration = function(HPKAReq, req, res){
 	var username = HPKAReq.username;
 	var keyInfo = getPubKeyObject(HPKAReq);
 	userList[username] = keyInfo;
@@ -104,7 +104,7 @@ var registration = function(HPKAReq, res){
 	res.end();
 };
 
-var deletion = function(HPKAReq, res){
+var deletion = function(HPKAReq, req, res){
 	if (typeof userList[HPKAReq.username] != 'object') return;
 	userList[HPKAReq.username] = undefined;
 	var headers = {'Content-Type': 'text/plain'};
@@ -116,7 +116,7 @@ var deletion = function(HPKAReq, res){
 
 };
 
-var keyRotation = function(HPKAReq, newKeyReq, res){
+var keyRotation = function(HPKAReq, newKeyReq, req, res){
 	var headers = {'Content-Type': 'text/plain'};
 	var body;
 	var errorCode;

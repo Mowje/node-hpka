@@ -1,9 +1,35 @@
-var cryptopp = require('cryptopp');
-var sodium = require('sodium');
+var cryptopp; 
+try {
+	cryptopp = require('cryptopp');
+} catch (e){
+
+}
+var sodium;
+try {
+	sodium = require('sodium');
+} catch (e){
+
+}
+
+if (!(sodium || cryptopp)) throw new TypeError('No sodium or cryptopp modules found. At least one of them must be installed');
+
 var fs = require('fs');
 var Buffer = require('buffer').Buffer;
 var http = require('http');
 var https = require('https');
+
+exports.supportedAlgorithms = function(){
+	var algos = [];
+	if (cryptopp){
+		algos.push('ECDSA');
+		algos.push('RSA');
+		algos.push('DSA');
+	}
+	if (sodium){
+		algos.push('Ed25519');
+	}
+	return algos;
+}
 
 var getCurveID = function(curveName){
 	//Prime curves
@@ -198,6 +224,12 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callbac
 	//Checking if the key type is ECDSA
 	//console.log('Parsed req : ' + JSON.stringify(req));
 	//console.log('Verfying signature');
+	if ((req.keyType == 'ecdsa' || req.keyType == 'rsa' || req.keyType == 'dsa') && !cryptopp){
+		req.err = 'ECDSA, RSA and DSA are not supported since cryptopp is not installed';
+	}
+	if (req.keyType == 'ed25519' && !sodium){
+		req.err = 'Ed25519 are not supported since sodium is not installed'
+	}
 	if (req.keyType == 'ecdsa'){
 		if (req.curveName.indexOf('secp') > -1){ //Checking is the curve is a prime field one
 			cryptopp.ecdsa.prime.verify(reqBlob, signature, req.point, req.curveName, 'sha1', function(isValid){
@@ -242,7 +274,7 @@ exports.verifySignature = verifySignature;
 	keyRotation: function(HPKAReq, RotationReq, res)
 }
 */
-exports.middleware = function(loginCheck, registration, deletion, keyRotation, strict){
+exports.expressMiddleware = function(loginCheck, registration, deletion, keyRotation, strict){
 	if (!(typeof loginCheck == 'function' && typeof registration == 'function' && typeof deletion == 'function' && typeof keyRotation == 'function')) throw new TypeError('loginCheck and registration parameters must be event handlers (ie, functions)');
 	if (!(typeof strict == 'undefined' || typeof strict == 'boolean')) throw new TypeError("When 'strict' is defined, it must be a boolean");
 	var middlewareFunction = function(req, res, next){
@@ -272,7 +304,7 @@ exports.middleware = function(loginCheck, registration, deletion, keyRotation, s
 								//Authentified HTTP request
 								//Check that the user is registered and the public key valid
 								//console.log('Calling login handler');
-								loginCheck(HPKAReq, res, function(isKeyValid){
+								loginCheck(HPKAReq, req, res, function(isKeyValid){
 									//console.log('Is key valid : ' + isKeyValid);
 									if (isKeyValid){
 										req.username = HPKAReq.username;
@@ -291,11 +323,11 @@ exports.middleware = function(loginCheck, registration, deletion, keyRotation, s
 							} else if (HPKAReq.actionType == 1){
 								//Registration
 								//console.log('Calling registration handler');
-								registration(HPKAReq, res);
+								registration(HPKAReq, req, res);
 								return;
 							} else if (HPKAReq.actionType == 2){
 								//User deletion
-								deletion(HPKAReq, res);
+								deletion(HPKAReq, req, res);
 							} else if (HPKAReq.actionType == 3){
 								//Key rotation
 								var newKeyBlob = req.get('HPKA-NewKey');
@@ -320,7 +352,7 @@ exports.middleware = function(loginCheck, registration, deletion, keyRotation, s
 									if (newKeySignIsValid){
 										verifySignatureWithoutProcessing(newKeyReq, newKeyBlob, newKeySignature2, function(newKeySign2IsValid){
 											if (newKeySign2IsValid){
-												keyRotation(HPKAReq, newKeyReq, res); 
+												keyRotation(HPKAReq, newKeyReq, req, res); 
 											} else {
 												res.status(445).set('HPKA-Error', 2);
 												res.send('Self-signature on new key is invalid');
@@ -408,7 +440,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 							//console.log('Signature is valid');
 							//Checking the action type and calling the right handlers
 							if (HPKAReq.actionType == 0x00){ //Authenticated HTTP request
-								loginCheck(HPKAReq, res, function(isValid){
+								loginCheck(HPKAReq, req, res, function(isValid){
 									if (isValid){
 										req.username = HPKAReq.username;
 										req.hpkareq = HPKAReq;
@@ -422,10 +454,10 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 									}
 								});
 							} else if (HPKAReq.actionType == 0x01){ //Registration request
-								registration(HPKAReq, res);
+								registration(HPKAReq, req, res);
 								return;
 							} else if (HPKAReq.actionType == 0x02){ //User deletion request
-								deletion(HPKAReq, res);
+								deletion(HPKAReq, req, res);
 								return;
 							} else if (HPKAReq.actionType == 0x03){ //Key rotation request
 								if (!req.headers['hpka-newkey']) writeErrorRes(res, 'Missing HPKA-NewKey header', 1);
@@ -449,7 +481,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 									if (newKeySignIsValid){
 										verifySignatureWithoutProcessing(newKeyReq, newKeyBlob, newKeySignature2, function(newKeySign2IsValid){
 											if (newKeySign2IsValid){
-												keyRotation(HPKAReq, newKeyReq, res);
+												keyRotation(HPKAReq, newKeyReq, req, res);
 												return;
 											} else {
 												writeErrorRes(res, 'Self-signature on new key is invalid', 2);
@@ -826,28 +858,3 @@ function buildPayload(keyRing, username, actionType, callback){
 		} else throw new TypeError('Unknown key type : ' + keyType);
 	});
 }
-
-//I probably don't need these
-/*function hexEncode(stringToEncode, inputEncoding){
-	if (inputEncoding && !Buffer.isEncoding(inputEncoding)) throw new TypeError('Invalid encoding');
-	var buf = new Buffer(stringToEncode, inputEncoding || 'utf8');
-	return buf.toString('hex');
-}
-
-function hexDecode(encoded, outpoutEncoding){
-	if (outpoutEncoding && !Buffer.isEncoding(outpoutEncoding)) throw new TypeError('Invalid encoding');
-	var buf = new Buffer(encoded, 'hex');
-	return buf.toString(outpoutEncoding || 'utf8');
-}
-
-function base64Encode(stringToEncode, inputEncoding){
-	if (inputEncoding && !Buffer.isEncoding(inputEncoding)) throw new TypeError('Invalid encoding');
-	var buf = new Buffer(stringToEncode, inputEncoding || 'utf8');
-	return buf.toString('base64');
-}
-
-function base64Decode(encoded, outpoutEncoding){
-	if (outpoutEncoding && !Buffer.isEncoding(outpoutEncoding)) throw new TypeError('Invalid encoding');
-	var buf = new Buffer(encoded, 'base64');
-	return buf.toString(outpoutEncoding || 'utf8');
-}*/
