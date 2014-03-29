@@ -158,7 +158,7 @@ The HPKAReq object is the result of parsing the [HPKA-Req field](https://github.
 
 #### Example
 
-For more detailed examples, have a look at [example.js](https://github.com/Tashweesh/node-hpka/blob/master/example.js) or [expressExample.js](https://github.com/Tashweesh/node-hpka/blob/master/expressExample.js).
+For more detailed examples, have a look at [test.js](https://github.com/Tashweesh/node-hpka/blob/master/test.js) or [expressTest.js](https://github.com/Tashweesh/node-hpka/blob/master/expressTest.js).
 
 	var hpkaBuilder = require('hpka');
 	var hpkaMiddleware = hpkaBuilder.middlware(

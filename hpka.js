@@ -313,7 +313,7 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 									} else {
 										if (strict){
 											res.status(445).set('HPKA-Error', '3');
-											res.send('Invalid public key or unregistered user');
+											res.send('Invalid key or unregistered user');
 										} else {
 											next();
 										}
