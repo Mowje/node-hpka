@@ -30,7 +30,7 @@ For `sodium`:
 
 	npm install git+https://github.com/Tashweesh/node-sodium.git --save
 
-As mentionned earlier, these modules can be installed either as a dependency of this module (ie, going to the folder containing the HPKA code and installing the dependencies there) or they could installed as a "normal" dependency of your application.
+As mentionned earlier, these modules can be installed either as a dependency of this module (ie, going to the folder containing the HPKA code and installing the dependencies there) or they could installed as a "normal" dependency of your application (probably the best option in order to dodge potential deployment issues with missing dependencies).
 
 ## How do the middlwares work?
 
@@ -41,6 +41,8 @@ When authentication succeeds, then the `req` objects recieves the following attr
 * `.hpkareq` : the [HPKA-Req object](https://github.com/Tashweesh/node-hpka#hpkareq-object) parsed from the request
 
 ## Usage
+
+**NOTE:** API has changed as of v0.2.0
 
 The module exposes 6 methods :
 

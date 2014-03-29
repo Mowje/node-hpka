@@ -10,10 +10,17 @@ var fs = require('fs');
 var assert = require('assert');
 var hpka = require('./hpka');
 
+var algosToTest = hpka.supportedAlgorithms();
+console.log('Supported algorithms: ' + JSON.stringify(algosToTest));
+if (algosToTest.length == 0){
+	console.log('Nothing to be tested, since nor cryptopp or sodium are installed');
+	process.exit(1);
+}
+
 var userList = {};
 var testUsername = 'test';
 
-var testKeyType = 'ed25519';
+var testKeyType = 'rsa';
 var testKeyOptions = {
 	ed25519: undefined,
 	ecdsa: 'secp256k1',
@@ -149,73 +156,76 @@ server.listen(2500, function(){
 	//console.log('Server started');
 });
 
-var keyPath = './hpkaclient.key';
-var newKeyPath = './newhpkaclient.key';
-var keyRing;
-var keyRing2;
+function testStuff(callback){
+	if (callback && typeof callback != 'function') throw new TypeError('When callback is defined, it must be a function');
+	var keyPath = './hpkaclient.key';
+	var newKeyPath = './newhpkaclient.key';
+	var keyRing;
+	var keyRing2;
 
-if (fs.existsSync(keyPath)) fs.unlinkSync(keyPath);
-if (fs.existsSync(newKeyPath)) fs.unlinkSync(newKeyPath);
+	if (fs.existsSync(keyPath)) fs.unlinkSync(keyPath);
+	if (fs.existsSync(newKeyPath)) fs.unlinkSync(newKeyPath);
 
-//console.log('Looking for a client key');
-if (!fs.existsSync(keyPath)){
-	//console.log('Creating a client key');
-	keyRing = hpka.createClientKey(testKeyType, testKeyOptions[testKeyType], keyPath);
-	//console.log('Generated key pair : ' + JSON.stringify(keyRing.publicKeyInfo()));
-}
+	//console.log('Looking for a client key');
+	if (!fs.existsSync(keyPath)){
+		//console.log('Creating a client key');
+		keyRing = hpka.createClientKey(testKeyType, testKeyOptions[testKeyType], keyPath);
+		//console.log('Generated key pair : ' + JSON.stringify(keyRing.publicKeyInfo()));
+	}
 
-if (!fs.existsSync(newKeyPath)){
-	//console.log('Creating second client key');
-	keyRing2 = hpka.createClientKey(testKeyType, testKeyOptions[testKeyType], newKeyPath);
-	//console.log('Second generated key pair : ' + JSON.stringify(keyRing2.publicKeyInfo()));
-}
+	if (!fs.existsSync(newKeyPath)){
+		//console.log('Creating second client key');
+		keyRing2 = hpka.createClientKey(testKeyType, testKeyOptions[testKeyType], newKeyPath);
+		//console.log('Second generated key pair : ' + JSON.stringify(keyRing2.publicKeyInfo()));
+	}
 
-var reqOptions = {
-	hostname: 'localhost',
-	port: 2500,
-	path: '/',
-	method: 'GET'
-};
+	var reqOptions = {
+		hostname: 'localhost',
+		port: 2500,
+		path: '/',
+		method: 'GET'
+	};
 
-//Sorry for the callback hell. :/ I just wanted to finish that stuff so I can code some "more interesting stuff" than a testing script.
-var client = new hpka.client(keyPath, testUsername);
-//First making an unauthenticated request
-var unauthReq = http.request(reqOptions, function(res){
-	assert.equal(res.statusCode, 200, 'On successful anonymous requests, status code must be 200');
-	res.on('data', function(data){
-		assert.equal(data, 'Anonymous user', 'Unexpected string from server : ' + data);
-		//Signing up
-		client.registerUser(reqOptions, function(res){
-			assert.equal(res.statusCode, 200, 'On successful registration, status code must be 200');
-			res.on('data', function(data){
-				assert.equal(data, 'Welcome ' + testUsername + ' !', 'Unexpected message on registration : ' + data);
-				//Autheticated HTTP request
-				client.request(reqOptions, undefined, function(res2){
-					assert.equal(res2.statusCode, 200, 'Successful autheticated request must have status code 200');
-					res2.on('data', function(data){
-						assert.equal(data, 'Authenticated as : ' + testUsername, 'Unexpected message on authenticated request : ' + data);
-						//Rotating keys
-						client.rotateKeys(reqOptions, newKeyPath, function(res3){
-							assert.equal(res3.statusCode, 200, 'Successful key rotation must have status code 200');
-							res3.on('data', function(data){
-								assert.equal(data, 'Keys have been rotated!', 'Unexpected message on key rotation : ' + data);
-								//Checking that the key rotation was done properly by sending an authenticated request using the new key
-								client.request(reqOptions, undefined, function(res4){
-									assert.equal(res4.statusCode, 200, 'Successful authenticated request have status code 200');
-									res4.on('data', function(data){
-										assert.equal(data, 'Authenticated as : ' + testUsername, 'Unexpected message on authenticated request : ' + data);
-										//Deleting user
-										client.deleteUser(reqOptions, function(res5){
-											assert.equal(res5.statusCode, 200, 'Successful account deletion must have status code 200');
-											res5.on('data', function(data){
-												assert.equal(data, testUsername + ' has been deleted!', 'Unexpected deletion message : ' + data);
-												//Trying to do an authenticated request in order to trigger an error (since the user has just been deleted)
-												client.request(reqOptions, undefined, function(res6){
-													assert.equal(res6.statusCode, 445, 'Status code must be 445, but it\'s ' + res6.statusCode + ' instead');
-													res6.on('data', function(data){
-														assert.equal(data, 'Invalid key or unregistered user', 'The user didn\'t seem to be deleted, even a HPKA delete request was sent');
-														//console.log('Received data from server (auth request after user deletion) : ' + data);
-														process.exit();
+	//Sorry for the callback hell. :/ I just wanted to finish that stuff so I can code some "more interesting stuff" than a testing script.
+	var client = new hpka.client(keyPath, testUsername);
+	//First making an unauthenticated request
+	var unauthReq = http.request(reqOptions, function(res){
+		assert.equal(res.statusCode, 200, 'On successful anonymous requests, status code must be 200');
+		res.on('data', function(data){
+			assert.equal(data, 'Anonymous user', 'Unexpected string from server : ' + data);
+			//Signing up
+			client.registerUser(reqOptions, function(res){
+				assert.equal(res.statusCode, 200, 'On successful registration, status code must be 200');
+				res.on('data', function(data){
+					assert.equal(data, 'Welcome ' + testUsername + ' !', 'Unexpected message on registration : ' + data);
+					//Autheticated HTTP request
+					client.request(reqOptions, undefined, function(res2){
+						assert.equal(res2.statusCode, 200, 'Successful autheticated request must have status code 200');
+						res2.on('data', function(data){
+							assert.equal(data, 'Authenticated as : ' + testUsername, 'Unexpected message on authenticated request : ' + data);
+							//Rotating keys
+							client.rotateKeys(reqOptions, newKeyPath, function(res3){
+								assert.equal(res3.statusCode, 200, 'Successful key rotation must have status code 200');
+								res3.on('data', function(data){
+									assert.equal(data, 'Keys have been rotated!', 'Unexpected message on key rotation : ' + data);
+									//Checking that the key rotation was done properly by sending an authenticated request using the new key
+									client.request(reqOptions, undefined, function(res4){
+										assert.equal(res4.statusCode, 200, 'Successful authenticated request have status code 200');
+										res4.on('data', function(data){
+											assert.equal(data, 'Authenticated as : ' + testUsername, 'Unexpected message on authenticated request : ' + data);
+											//Deleting user
+											client.deleteUser(reqOptions, function(res5){
+												assert.equal(res5.statusCode, 200, 'Successful account deletion must have status code 200');
+												res5.on('data', function(data){
+													assert.equal(data, testUsername + ' has been deleted!', 'Unexpected deletion message : ' + data);
+													//Trying to do an authenticated request in order to trigger an error (since the user has just been deleted)
+													client.request(reqOptions, undefined, function(res6){
+														assert.equal(res6.statusCode, 445, 'Status code must be 445, but it\'s ' + res6.statusCode + ' instead');
+														res6.on('data', function(data){
+															assert.equal(data, 'Invalid key or unregistered user', 'The user didn\'t seem to be deleted, even a HPKA delete request was sent');
+															//console.log('Received data from server (auth request after user deletion) : ' + data);
+															if (callback) callback();
+														});
 													});
 												});
 											});
@@ -224,10 +234,26 @@ var unauthReq = http.request(reqOptions, function(res){
 								});
 							});
 						});
-					});
-				})
+					})
+				});
 			});
 		});
 	});
-});
-unauthReq.end(); //Yes, unlike HPKA requests, standard HTTP requests must be `end()`-ed... Sorry if automaitcally `end()`-ing HPKA requests causes you some trouble
+	unauthReq.end(); //Yes, unlike HPKA requests, standard HTTP requests must be `end()`-ed... Sorry if automaitcally `end()`-ing HPKA requests causes you some trouble
+}
+
+
+var keyIndex = 0;
+testKeyType = algosToTest[0].toLowerCase();
+var testAlgos = function(callback){
+	if (callback && typeof callback !== 'function') throw new TypeError('When defined, callback must be a function');
+	console.log('Testing ' + testKeyType);
+	testStuff(function(){
+		console.log(testKeyType + ' has been tested successfully');
+		keyIndex++;
+		if (keyIndex == algosToTest.length) process.exit(0);
+		testKeyType = algosToTest[keyIndex].toLowerCase();
+		testAlgos(testAlgos);
+	});
+};
+testAlgos();
