@@ -1,5 +1,4 @@
 # node-hpka
-
 ------------------------------------------------------------
 
 A [Node.js](http://nodejs.org) implementation of the [HPKA protocol](https://github.com/Tashweesh/hpka). Acts as an [expressjs](https://github.com/visionmedia/express) middleware or standard [HTTP](http://nodejs.org/api/http.html)/[HTTPS](http://nodejs.org/api/https.html) middlware. It also has an HPKA client object.
@@ -18,7 +17,7 @@ As of v0.2.0, this modules doesn't have mandatory dependencies (ie, they are not
 * [cryptopp](https://github.com/Tashweesh/node-cryptopp.git) if you want to support requests with ECDSA, RSA or DSA keys
 * [sodium](https://github.com/Tashweesh/node-sodium.git) if you want to support requests with Ed25519 keys
 
-These dependencies don't necessarily need to be installed locally for the module, but [could be used in a higher level of the "node_modules" folder](http://nodejs.org/api/modules.html#modules_loading_from_node_modules_folders). Note that for sodium, you have to use our fork of the module and not the [original one](https://github.com/paixaop/node-sodium).
+These dependencies don't necessarily need to be installed locally for the module, but [could be used in a higher level of the "node_modules" folder](http://nodejs.org/api/modules.html#modules_loading_from_node_modules_folders). Note that for sodium, you have to use [our fork](https://github.com/Tashweesh/node-sodium) of the module and not the [original one](https://github.com/paixaop/node-sodium). This is due to the fact that we added a [KeyRing](https://github.com/Tashweesh/node-sodium#use-the-keyring) feature in our fork that did not exist in the original module.
 
 ## How to install dependencies
 
