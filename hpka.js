@@ -228,13 +228,13 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callbac
 	if ((req.keyType == 'ecdsa' || req.keyType == 'rsa' || req.keyType == 'dsa') && !cryptopp){
 		req.err = 'ECDSA, RSA and DSA are not supported since cryptopp is not installed';
 		req.errcode = 12;
-		callback(false);
+		callback(true); //Even though the signature can't be verified. If callback(false) was called, the middleware will throw an "invalid signature" message to the client
 		return;
 	}
 	if (req.keyType == 'ed25519' && !sodium){
 		req.err = 'Ed25519 are not supported since sodium is not installed';
 		req.errcode = 12;
-		callback(false);
+		callback(true); //Even though the signature can't be verified. If callback(false) was called, the middleware will throw an "invalid signature" message to the client
 		return;
 	}
 	if (req.keyType == 'ecdsa'){
