@@ -148,6 +148,7 @@ var processReqBlob = function(pubKeyBlob){
 	var req = {};
 	req.username = username;
 	req.actionType = actionType;
+	req.timeStamp = timeStamp;
 	//var byteIndex = 4;
 	if (keyType == 1){ //ECDSA case
 		//Reading the x and y coordinates of the public point
@@ -226,9 +227,15 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callbac
 	//console.log('Verfying signature');
 	if ((req.keyType == 'ecdsa' || req.keyType == 'rsa' || req.keyType == 'dsa') && !cryptopp){
 		req.err = 'ECDSA, RSA and DSA are not supported since cryptopp is not installed';
+		req.errcode = 12;
+		callback(false);
+		return;
 	}
 	if (req.keyType == 'ed25519' && !sodium){
-		req.err = 'Ed25519 are not supported since sodium is not installed'
+		req.err = 'Ed25519 are not supported since sodium is not installed';
+		req.errcode = 12;
+		callback(false);
+		return;
 	}
 	if (req.keyType == 'ecdsa'){
 		if (req.curveName.indexOf('secp') > -1){ //Checking is the curve is a prime field one

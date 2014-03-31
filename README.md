@@ -139,7 +139,9 @@ The HPKAReq object is the result of parsing the [HPKA-Req field](https://github.
 
 * username: a string
 * actionType : a number, as defined in the spec
+* timeStamp : the date&time at which the payload was built and signed. UTC Unix Epoch (number of **seconds** since 1-1-1970 00:00:00 UTC)
 * err : a string, defined only if an error occured. As of now, it is only defined if a request with an ECDSA, RSA or DSA key comes in and `cryptopp` is not insalled (Same thing for Ed25519 and `sodium` respectively)
+* errcode : is defined when `.err` is defined. The HPKA Error code corresponding to the message in `.err`.
 * keyType : a string (either "ecdsa", "rsa" or "dsa")
 * In case of keyType == "ecdsa"
 	* point : the public ECDSA point, which has :
