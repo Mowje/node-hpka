@@ -21,12 +21,12 @@ var https = require('https');
 exports.supportedAlgorithms = function(){
 	var algos = [];
 	if (cryptopp){
-		algos.push('ECDSA');
-		algos.push('RSA');
-		algos.push('DSA');
+		algos.push('ecdsa');
+		algos.push('rsa');
+		algos.push('dsa');
 	}
 	if (sodium){
-		algos.push('Ed25519');
+		algos.push('ed25519');
 	}
 	return algos;
 }

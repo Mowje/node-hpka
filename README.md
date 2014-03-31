@@ -18,7 +18,7 @@ As of v0.2.0, this modules doesn't have mandatory dependencies (ie, they are not
 * [cryptopp](https://github.com/Tashweesh/node-cryptopp.git) if you want to support requests with ECDSA, RSA or DSA keys
 * [sodium](https://github.com/Tashweesh/node-sodium.git) if you want to support requests with Ed25519 keys
 
-These dependencies don't necessarily need to be installed locally for the module, but [could be used in a higher level of the "node_modules" folder](http://nodejs.org/api/modules.html#modules_loading_from_node_modules_folders)
+These dependencies don't necessarily need to be installed locally for the module, but [could be used in a higher level of the "node_modules" folder](http://nodejs.org/api/modules.html#modules_loading_from_node_modules_folders). Note that for sodium, you have to use our fork of the module and not the [original one](https://github.com/paixaop/node-sodium).
 
 ## How to install dependencies
 
