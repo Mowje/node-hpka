@@ -114,10 +114,14 @@ Note that :
 * deleteUser(options, callback), delete the user's account :
 	* options : the [HTTP](http://nodejs.org/api/http.html)/[HTTPS](http://nodejs.org/api/https.html) options object. Note that if you want to use https, you must set `options.protocol = 'https'`; otherwise, http is used
 	* callback : method that will be called once the request is sent. The callback will have the [response](http://nodejs.org/api/http.html#http_http_incomingmessage) object as unique parameter
-* rotateKeys(options, newKeyPath, callback), :
+* rotateKeys(options, newKeyPath, callback), key rotation request (ie, key change/swap) :
 	* options : the [HTTP](http://nodejs.org/api/http.html)/[HTTPS](http://nodejs.org/api/https.html) options object. Note that if you want to use https, you must set `options.protocol = 'https'`; otherwise, http is used
 	* newKeyPath : path where the new key file is stored. That file could either be created with `hpka.createClientKey()` or [cryptopp.KeyRing](https://github.com/Tashweesh/node-cryptopp#keyring).
 	* callback : method that will be called once the request is sent. The callback will have the [response](http://nodejs.org/api/http.html#http_http_incomingmessage) object as unique parameter
+* setHttpMod(httpRef), set the http module you want to use :
+	* httpRef : the http module you want to use, overriding the [default one](http://nodejs.org/api/http.html). To go back to the default module, call the method again with no parameter. Example use case : using HPKA with Tor, as explained below.
+* setHttpsMod(httpsRef), set the https module you want to use :
+	* httpsRef : the https module you want to use, overriding the [default one](https://nodejs.org/api/https.html). To go back to the default module, call the method again with no parameter. Example use case : using HPKA with Tor, as explained below.
 
 ```hpka.createClientKey(keyType, options, filename)```: creates a new keypair file  
 * keyType : must be either 'ecdsa', 'rsa' or 'dsa'
@@ -132,7 +136,18 @@ Note that :
 	* username : username found in the reuquest
 	* HPKAReq : the HPKAReq object extracted from the HPKA-Req header  
 	
-#### HPKAReq object
+## Using the client with Tor (or any SOCKS5 proxy server)
+
+I see 2 ways of doing this:
+
+1. When doing a HPKA request, set `options.agent` with the agent from [Mattcg](https://github.com/mattcg)'s [socks5-http-client](https://github.com/mattcg/socks5-http-client) and [socks5-https-client](https://github.com/mattcg/socks5-https-client) as you would do when using [request](https://github.com/mattcg/socks5-http-client#using-with-request)
+2. Use the `setHttpMod()` and `setHttpsMod()` methods to override the default http/https modules with instances from the 2 socks modules mentionned above
+
+Note that the first technique is probably more convenient since you have to specify the Tor address and port only once (ie, when instanciating the agent)
+
+Note also that if you want to host a server with HPKA as a hidden service, you can simply use [node-ths](https://github.com/Tashweesh/node-ths).
+
+## HPKAReq object
 
 The HPKAReq object is the result of parsing the [HPKA-Req field](https://github.com/Tashweesh/hpka#hpka-req-protocol). I will here just list its attributes :
 
@@ -157,7 +172,7 @@ The HPKAReq object is the result of parsing the [HPKA-Req field](https://github.
 * In case of keyType == "ed25519"
 	* publicKey : a hex encoded string of the public key
 
-#### Example
+## Example
 
 For more detailed examples, have a look at [test.js](https://github.com/Tashweesh/node-hpka/blob/master/test.js) or [expressTest.js](https://github.com/Tashweesh/node-hpka/blob/master/expressTest.js).
 
@@ -186,7 +201,7 @@ For more detailed examples, have a look at [test.js](https://github.com/Tashwees
 		true
 	);
 
-#### Where to load the expressjs middleware?
+## Where to load the expressjs middleware?
 
 To load express middlwares, you have to call the ```app.use(middlware)``` method. The thing is that, as far as I understand, the loading order of middlwares impact the order of middlware execution when a request comes to the server. It seems it is "first loaded, first executed". Also it seems that my middlware isn't called when it is loaded after ```app.router```. In addition, if you want to serve public static folders (without authentication), you should take that into account too. So here is how I loaded the hpka middleware in my example application :
 

@@ -597,6 +597,9 @@ exports.client = function(keyFilename, usernameVal){
 		throw new TypeError("Invalid key file");
 	}
 
+	var httpRef = http;
+	var httpsRef = https;
+
 	function stdReq(options, body, actionType, callback){
 		if (!(options && typeof options == 'object')) throw new TypeError('"options" parameter must be defined and must be an object, according to the default http(s) node modules & node-hpka documentations');
 		if (!(typeof actionType == 'number')) throw new TypeError('"actionType" parameter must be defined and must be a number');
@@ -609,12 +612,12 @@ exports.client = function(keyFilename, usernameVal){
 			var req;
 			if (options.protocol && options.protocol == 'https'){
 				options.protocol = null;
-				req = https.request(options, function(res){
+				req = httpsRef.request(options, function(res){
 					if (callback) callback(res);
 				})
 			} else {
 				options.protocol = null;
-				req = http.request(options, function(res){
+				req = httpRef.request(options, function(res){
 					if (callback) callback(res);
 				});
 			}
@@ -709,6 +712,18 @@ exports.client = function(keyFilename, usernameVal){
 				})
 			});
 		});
+	};
+
+	this.setHttpMod = function(_httpRef){
+		if (_httpRef){
+			httpRef = _httpRef;
+		} else httpRef = http;
+	};
+
+	this.setHttpsMod = function(_httpsRef){
+		if (_httpsRef){
+			httpsRef = _httpsRef;
+		} else httpsRef = https;
 	};
 };
 
