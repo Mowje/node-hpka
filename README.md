@@ -128,6 +128,13 @@ Note that :
 * options : the curve name for ecdsa, the key size for RSA and RSA.
 * filename : path where the key file should be stored.
 
+```hpka.buildPayload(keyRing, username, actionType, callback)```:
+Build (asynchronously) a client HPKA payload with the given parameters:  
+* keyRing : a KeyRing instance from [sodium](https://github.com/Tashweesh/node-sodium.git) or [cryptopp](https://github.com/Tashweesh/node-cryptopp.git)
+* username : the user's name (a string)
+* actionType : a byte, indicating the action type, as defined in the [HPKA spec](https://github.com/Tashweesh/hpka#hpka-req-protocol)
+* callback : a function, that will recieve as parameters the (req, signature) encoded duplet (for the HPKA-Req and HPKA-Signature headers respectively)
+
 ```hpka.verifySignature(reqBlob, signature, callback(isValid, username, HPKAReq))```: checks the signature of a HPKA request. To be used if you choose to manage signature verification and actionType handling by yourself  
 * reqBlob : the content of the "HPKA-Req" header
 * signature : the content of the "HPKA-Signature" header

@@ -870,7 +870,7 @@ function buildPayload(keyRing, username, actionType, callback){
 		var keyType = pubKey.keyType;
 		if (keyType == 'rsa' || keyType == 'dsa' || keyType == 'ecdsa'){
 			keyRing.sign(req, undefined, undefined, function(signature){
-				callback(req, signature);
+				callback(req, signature); //node-cryptopp returns the signatures already hex-encoded
 			});
 		} else if (keyType == 'ed25519'){
 			keyRing.sign(new Buffer(req), function(signature){
@@ -880,3 +880,5 @@ function buildPayload(keyRing, username, actionType, callback){
 		} else throw new TypeError('Unknown key type : ' + keyType);
 	});
 }
+
+exports.buildPayload = buildPayload;
