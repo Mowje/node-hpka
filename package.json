@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Tashweesh/node-hpka.git"
+    "url": "https://github.com/Mowje/node-hpka.git"
   },
   "keywords": [
     "HTTP",
@@ -20,6 +20,6 @@
   "author": "BatikhSouri",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/Tashweesh/node-hpka/issues"
+    "url": "https://github.com/Mowje/node-hpka/issues"
   }
 }

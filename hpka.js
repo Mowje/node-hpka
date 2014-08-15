@@ -1,4 +1,4 @@
-var cryptopp; 
+var cryptopp;
 try {
 	cryptopp = require('cryptopp');
 } catch (e){
@@ -42,7 +42,7 @@ var getCurveID = function(curveName){
 	else if (curveName == 'secp160k1') return 0x07;
 	else if (curveName == 'secp192r1') return 0x08;
 	else if (curveName == 'secp192k1') return 0x09;
-	else if (curveName == 'secp224r1') return 0x0A;		
+	else if (curveName == 'secp224r1') return 0x0A;
 	else if (curveName == 'secp224k1') return 0x0B;
 	else if (curveName == 'secp256r1') return 0x0C;
 	else if (curveName == 'secp256k1') return 0x0D;
@@ -359,7 +359,7 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 									if (newKeySignIsValid){
 										verifySignatureWithoutProcessing(newKeyReq, newKeyBlob, newKeySignature2, function(newKeySign2IsValid){
 											if (newKeySign2IsValid){
-												keyRotation(HPKAReq, newKeyReq, req, res); 
+												keyRotation(HPKAReq, newKeyReq, req, res);
 											} else {
 												res.status(445).set('HPKA-Error', 2);
 												res.send('Self-signature on new key is invalid');
@@ -375,7 +375,7 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 								if (Number(HPKAReq.actionType) < 0 || Number(HPKAReq.actionType) > 4){
 									//Invalid action types
 									res.set('HPKA-Error', '8');
-									res.send('Unknown action type. What the hell are you doing?'); 
+									res.send('Unknown action type. What the hell are you doing?');
 									//console.log("Unknown action type : " + HPKAReq.actionTyp );
 								} else {
 									//Valid action type, but not implemented here yet
@@ -483,7 +483,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 								if (HPKAReq.username != newKeyReq.username) writeErrorRes(res, 'usernames must be the same in both requests', 1);
 								var newKeySignature = req.headers['hpka-newkeysignature'];
 								var newKeySignature2 = req.headers['hpka-newkeysignature2'];
-								//Verifying new 
+								//Verifying new
 								verifySignatureWithoutProcessing(HPKAReq, newKeyBlob, newKeySignature, function(newKeySignIsValid){
 									if (newKeySignIsValid){
 										verifySignatureWithoutProcessing(newKeyReq, newKeyBlob, newKeySignature2, function(newKeySign2IsValid){
@@ -606,7 +606,9 @@ exports.client = function(keyFilename, usernameVal){
 		if (!(actionType >= 0x00 && actionType <= 0x02)) throw new TypeError('"actionType" parameter must be 0x00 <= actionType <= 0x02 when calling stdReq(). Note that keyRotations have their methods (because they require than a simple HPKA-Req blob and its signature');
 		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
 		if (!options.headers) options.headers = {};
-		buildPayload(keyRing, username, actionType, function(req, signature){
+		if (!(options.hostname && options.path)) throw new TypeError('hostname and path options must be specified')
+		var hostnameAndPath = options.hostname + options.path;
+		buildPayload(keyRing, username, actionType, hostnameAndPath, function(req, signature){
 			options.headers['HPKA-Req'] = req;
 			options.headers['HPKA-Signature'] = signature;
 			var req;
@@ -623,7 +625,7 @@ exports.client = function(keyFilename, usernameVal){
 			}
 			if (body) req.write(body);
 			req.end();
-		})
+		});
 	}
 
 	this.request = function(options, body, callback){
@@ -645,19 +647,30 @@ exports.client = function(keyFilename, usernameVal){
 		if (!options.headers) options.headers = {};
 		if (!fs.existsSync(newKeyPath)) throw new TypeError('The key file doesn\'t exist');
 
-		var signStuff = function(keyRing, stuff, callback){
+		if (!(options.hostname && options.path)) throw new TypeError('hostname and path options must be defined');
+		var hostnameAndPath = options.hostname + options.path;
+		if (!parseHostnameAndPath(hostname)) throw new TypeError('invalid hostname and path values');
+
+		var signReq = function(keyRing, req, callback){
 			if (!keyRing) throw new TypeError('KeyRing has not been defined');
-			if (!stuff) throw new TypeError('stuff has not been defined');
+			if (!req) throw new TypeError('stuff has not been defined');
 			if (!(callback && typeof callback == 'function')) throw new TypeError('Callback must be a function');
-			
+
+			var reqLength;
+			if (Buffer.isBuffer(req)) reqLength = req.length;
+			else reqLength = getBase64ByteLength(req); //In case req is a string, then it's base64 encoded
+			var signedMessageLength = reqLength + hostnameAndPath;
+			var signedMessage = new Buffer(signedMessageLength);
+
 			if (keyRing instanceof cryptopp.KeyRing){
-				keyRing.sign(stuff, undefined, undefined, callback);
+
+				keyRing.sign(_stuff, 'base64', undefined, callback);
 			} else if (keyRing instanceof sodium.KeyRing) {
 				var _stuff;
 				if (!Buffer.isBuffer(stuff)) _stuff = new Buffer(stuff);
 				else _stuff = stuff;
 				keyRing.sign(_stuff, function(signature){
-					callback(signature.toString('hex'));
+					callback(signature.toString('base64'));
 				});
 			} else throw new TypeError('Unknown KeyRing type');
 		};
@@ -679,12 +692,13 @@ exports.client = function(keyFilename, usernameVal){
 		newKeyRing.load(newKeyPath);
 
 		//First we build the payload with the known key and sign it
-		buildPayload(keyRing, username, 0x03, function(req1, signature1){
+		buildPayload(keyRing, username, 0x03, hostnameAndPath, function(req1, signature1){
 			options.headers['HPKA-Req'] = req1;
 			options.headers['HPKA-Signature'] = signature1;
 			//Now we build a payload with the new key
 			buildPayloadWithoutSignature(newKeyRing, username, 0x03, function(req2){
-				options.headers['HPKA-NewKey'] = req2;
+				var req2Encoded = req2.toString('base64');
+				options.headers['HPKA-NewKey'] = req2Encoded;
 				//Now we sign the that second payload using the keypair known to the server
 				signStuff(keyRing, req2, function(newKeySignature1){
 					options.headers['HPKA-NewKeySignature'] = newKeySignature1;
@@ -710,7 +724,7 @@ exports.client = function(keyFilename, usernameVal){
 						httpReq.end();
 					});
 				})
-			});
+			}, 'base64');
 		});
 	};
 
@@ -727,7 +741,7 @@ exports.client = function(keyFilename, usernameVal){
 	};
 };
 
-function buildPayloadWithoutSignature(keyRing, username, actionType, callback){
+function buildPayloadWithoutSignature(keyRing, username, actionType, callback, encoding){
 	if (!(keyRing && (keyRing instanceof cryptopp.KeyRing || keyRing instanceof sodium.KeyRing))) throw new TypeError('keyRing must defined and an instance of cryptopp.KeyRing or sodium.KeyRing');
 	if (!(username && typeof username == 'string')) throw new TypeError('username must be a string');
 	if (username.length > 255) throw new TypeError('Username must be at most 255 bytes long');
@@ -768,7 +782,7 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback){
 		bufferLength += 2; //Public key length field
 		bufferLength += pubKey.publicKey.length / 2; //Actual public key length
 	}
-	bufferLength += 10; //The 10 random bytes appended to the end of the payload; augments signature's entropy
+	//bufferLength += 10; //The 10 random bytes appended to the end of the payload; augments signature's entropy
 	//Building the payload
 	//console.log('Req payload length : ' + bufferLength);
 	var buffer = new Buffer(bufferLength);
@@ -859,26 +873,51 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback){
 		offset += pubKey.publicKey.length / 2;
 	} else throw new TypeError('Unknown key type : ' + pubKey.keyType);
 
-	var req = buffer.toString('base64');
+	var req = (encoding ? buffer.toString(encoding) : buffer);
 	callback(req);
 }
 
-function buildPayload(keyRing, username, actionType, callback){
+function buildPayload(keyRing, username, actionType, hostnameAndPath, callback){
+	if (!(hostnameAndPath && typeof hostnameAndPath == 'string' && parseHostnameAndPath(hostnameAndPath))) throw new TypeError('hostnameAndPath must be a valid string with hostname and path of the request concatenated');
+	if (!(callback && typeof callback == 'function')) throw new TypeError('callback must be a function');
 	buildPayloadWithoutSignature(keyRing, username, actionType, function(req){
 		//Note : req is already base64 encoded at this point...
+		var reqEncoded = req.toString('base64');
+		var reqByteLength = req.length;
+		var signedMessageLength = reqByteLength + hostnameAndPath.length;
+		var signedMessage = new Buffer(signedMessageLength);
+		req.copy(signedMessage);
+		signedMessage.write(hostnameAndPath, reqByteLength);
 		var pubKey = keyRing.publicKeyInfo();
 		var keyType = pubKey.keyType;
 		if (keyType == 'rsa' || keyType == 'dsa' || keyType == 'ecdsa'){
-			keyRing.sign(req, undefined, undefined, function(signature){
-				callback(req, signature); //node-cryptopp returns the signatures already hex-encoded
+			keyRing.sign(signedMessage.toString('utf8'), 'base64', undefined, function(signature){
+				callback(reqEncoded, signature); //node-cryptopp returns the signatures already hex-encoded
 			});
 		} else if (keyType == 'ed25519'){
-			keyRing.sign(new Buffer(req), function(signature){
+			keyRing.sign(signedMessage, function(signature){
 				if (!(Buffer.isBuffer(signature) && signature.length > sodium.api.crypto_sign_BYTES)) throw new TypeError('Invalid signature: ' + signature);
-				callback(req, signature.toString('hex'));
+				callback(reqEncoded, signature.toString('base64'));
 			});
 		} else throw new TypeError('Unknown key type : ' + keyType);
 	});
 }
 
 exports.buildPayload = buildPayload;
+
+function parseHostnameAndPath(s){
+	if (!(s && typeof s == 'string')) return false;
+	var seperationIndex = s.indexOf('/');
+	if (seperationIndex == -1) return false;
+	var hostname = s.substring(0, seperationIndex - 1);
+	var path = s.substring(seperationIndex);
+	return {hostname: hostname, path: path};
+}
+
+function getBase64ByteLength(base64){
+	if (!isValidBase64(base64)) throw new TypeError('invalid base64 string');
+	var missingBytes = 0;
+	if (base64.indexOf('=') > -1) missingBytes = 1;
+	if (base64.indexOf('==') > -1) missingBytes = 2;
+	return 3 * (base64.length / 4) - missingBytes;
+}
