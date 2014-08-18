@@ -254,15 +254,17 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callbac
 			callback(isValid);
 		});
 	} else if (req.keyType == 'ed25519'){
-		var signedMessage = sodium.api.crypto_sign_open(new Buffer(signature, 'hex'), new Buffer(req.publicKey, 'hex'));
-		if (typeof signedMessage === 'undefined') {callback(false); return;}
+		var isValid = sodium.api.crypto_sign_verify_detached(new Buffer(signature, 'base64'), new new Buffer(req.publicKey, 'hex'));
+		callback(isValid);
+		/*if (typeof signedMessage === 'undefined') {callback(false); return;}
 		//Note: the signed message is a Base64 encoded string, hence the content of signedMessage buffer is the "already encoded" base64 string.
 		if (signedMessage.toString('ascii') == reqBlob) callback(true);
-		else callback(false);
+		else callback(false);*/
 	} else throw new TypeError("Unknown key type");
 };
 
-var verifySignature = function(reqBlob, signature, callback){
+//This method is not used anywhere...
+/*var verifySignature = function(reqBlob, signature, callback){
 	var req = processReqBlob(reqBlob);
 	verifySignatureWithoutProcessing(req, reqBlob, signature, function(isValid){
 		if (isValid) callback(true, req.username, req);
@@ -270,7 +272,7 @@ var verifySignature = function(reqBlob, signature, callback){
 	});
 };
 
-exports.verifySignature = verifySignature;
+exports.verifySignature = verifySignature;*/
 
 //Expressjs middlware builder
 /* Config object signature
@@ -671,7 +673,7 @@ exports.client = function(keyFilename, usernameVal){
 				else _stuff = stuff;
 				keyRing.sign(_stuff, function(signature){
 					callback(signature.toString('base64'));
-				});
+				}, true); //Last parameter : detached signature
 			} else throw new TypeError('Unknown KeyRing type');
 		};
 
@@ -898,7 +900,7 @@ function buildPayload(keyRing, username, actionType, hostnameAndPath, callback){
 			keyRing.sign(signedMessage, function(signature){
 				if (!(Buffer.isBuffer(signature) && signature.length > sodium.api.crypto_sign_BYTES)) throw new TypeError('Invalid signature: ' + signature);
 				callback(reqEncoded, signature.toString('base64'));
-			});
+			}, true); //Last parameter : detached signature
 		} else throw new TypeError('Unknown key type : ' + keyType);
 	});
 }
