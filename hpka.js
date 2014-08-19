@@ -221,10 +221,18 @@ var processReqBlob = function(pubKeyBlob){
 * signature : the signature that we will verify, corresponding to reqBlob, hex-encoded string
 * callback : callback function taking a boolean indicating the validity of the signature
 */
-var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callback){
+var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature, callback){
+	if (!callback) console.log('Callback not received');
 	//Checking if the key type is ECDSA
 	//console.log('Parsed req : ' + JSON.stringify(req));
 	//console.log('Verfying signature');
+	var signedBlob = appendHostAndPathFromReq(reqBlob, httpReq);
+	if (!signedBlob){
+		console.log('Error: can\'t get the blob of which we have to check the authenticity');
+		console.log('reqBlob:\n' + JSON.stringify(reqBlob));
+		console.log('url: ' + httpReq.url + '\nhostname: ' + httpReq.headers.hostname + '\nhost: ' + httpReq.headers.host);
+		process.exit(1);
+	}
 	if ((req.keyType == 'ecdsa' || req.keyType == 'rsa' || req.keyType == 'dsa') && !cryptopp){
 		req.err = 'ECDSA, RSA and DSA are not supported since cryptopp is not installed';
 		req.errcode = 12;
@@ -239,22 +247,22 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, signature, callbac
 	}
 	if (req.keyType == 'ecdsa'){
 		if (req.curveName.indexOf('secp') > -1){ //Checking is the curve is a prime field one
-			cryptopp.ecdsa.prime.verify(reqBlob, signature, req.point, req.curveName, 'sha1', function(isValid){
+			cryptopp.ecdsa.prime.verify(signedBlob.toString('utf8'), signature, req.point, req.curveName, 'sha1', function(isValid){
 				callback(isValid);
 			});
 		} else if (req.curveName.indexOf('sect') > -1){ //Binary curves aren't supported in ECDSA on binary fields in the node-cryptopp binding lib v0.1.2
 			throw new TypeError("Unsupported curve type. See cryptopp README page");
 		} else throw new TypeError("Unknown curve type");
 	} else if (req.keyType == 'rsa'){
-		cryptopp.rsa.verify(reqBlob, signature, req.modulus, req.publicExponent, undefined, function(isValid){
+		cryptopp.rsa.verify(signedBlob.toString('utf8'), signature, req.modulus, req.publicExponent, undefined, function(isValid){
 			callback(isValid);
 		});
 	} else if (req.keyType == 'dsa'){
-		cryptopp.dsa.verify(reqBlob, signature, req.primeField, req.divider, req.base, req.publicElement, function(isValid){
+		cryptopp.dsa.verify(signedBlob.toString('utf8'), signature, req.primeField, req.divider, req.base, req.publicElement, function(isValid){
 			callback(isValid);
 		});
 	} else if (req.keyType == 'ed25519'){
-		var isValid = sodium.api.crypto_sign_verify_detached(new Buffer(signature, 'base64'), new new Buffer(req.publicKey, 'hex'));
+		var isValid = sodium.api.crypto_sign_verify_detached(new Buffer(signature, 'base64'), signedBlob, new Buffer(req.publicKey, 'hex'));
 		callback(isValid);
 		/*if (typeof signedMessage === 'undefined') {callback(false); return;}
 		//Note: the signed message is a Base64 encoded string, hence the content of signedMessage buffer is the "already encoded" base64 string.
@@ -305,7 +313,7 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 					return;
 				}
 				try {
-					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, HPKASignature, function(isValid){
+					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, req, HPKASignature, function(isValid){
 						if (isValid){
 							//console.log('actionType : ' + HPKAReq.actionType);
 							//console.log('Username : ' + HPKAReq.username);
@@ -357,9 +365,9 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 									res.status(445).set('HPKA-Error', '1');
 									res.send('usernames must be the same in both requests');
 								}
-								verifySignatureWithoutProcessing(HPKAReq, newKeyBlob, newKeySignature, function(newKeySignIsValid){
+								verifySignatureWithoutProcessing(HPKAReq, newKeyBlob, req, newKeySignature, function(newKeySignIsValid){
 									if (newKeySignIsValid){
-										verifySignatureWithoutProcessing(newKeyReq, newKeyBlob, newKeySignature2, function(newKeySign2IsValid){
+										verifySignatureWithoutProcessing(newKeyReq, newKeyBlob, req, newKeySignature2, function(newKeySign2IsValid){
 											if (newKeySign2IsValid){
 												keyRotation(HPKAReq, newKeyReq, req, res);
 											} else {
@@ -444,7 +452,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 				}
 				//Checking the signature then calling the handlers according to the actionType
 				try {
-					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, HPKASignature, function(isValid){
+					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, req, HPKASignature, function(isValid){
 						if (isValid){
 							//console.log('Signature is valid');
 							//Checking the action type and calling the right handlers
@@ -486,9 +494,9 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 								var newKeySignature = req.headers['hpka-newkeysignature'];
 								var newKeySignature2 = req.headers['hpka-newkeysignature2'];
 								//Verifying new
-								verifySignatureWithoutProcessing(HPKAReq, newKeyBlob, newKeySignature, function(newKeySignIsValid){
+								verifySignatureWithoutProcessing(HPKAReq, newKeyBlob, req, newKeySignature, function(newKeySignIsValid){
 									if (newKeySignIsValid){
-										verifySignatureWithoutProcessing(newKeyReq, newKeyBlob, newKeySignature2, function(newKeySign2IsValid){
+										verifySignatureWithoutProcessing(newKeyReq, newKeyBlob, req, newKeySignature2, function(newKeySign2IsValid){
 											if (newKeySign2IsValid){
 												keyRotation(HPKAReq, newKeyReq, req, res);
 												return;
@@ -649,29 +657,26 @@ exports.client = function(keyFilename, usernameVal){
 		if (!options.headers) options.headers = {};
 		if (!fs.existsSync(newKeyPath)) throw new TypeError('The key file doesn\'t exist');
 
-		if (!(options.hostname && options.path)) throw new TypeError('hostname and path options must be defined');
-		var hostnameAndPath = options.hostname + options.path;
+		if (!((options.host || options.hostname) && options.path)) throw new TypeError('hostname and path options must be defined');
+		var hostname = options.hostname || options.host.replace(/\d+/, '');
+		var hostnameAndPath = hostname + options.path;
 		if (!parseHostnameAndPath(hostname)) throw new TypeError('invalid hostname and path values');
 
 		var signReq = function(keyRing, req, callback){
 			if (!keyRing) throw new TypeError('KeyRing has not been defined');
-			if (!req) throw new TypeError('stuff has not been defined');
+			if (!Buffer.isBuffer(req)) throw new TypeError('req must be a buffer');
 			if (!(callback && typeof callback == 'function')) throw new TypeError('Callback must be a function');
 
-			var reqLength;
-			if (Buffer.isBuffer(req)) reqLength = req.length;
-			else reqLength = getBase64ByteLength(req); //In case req is a string, then it's base64 encoded
-			var signedMessageLength = reqLength + hostnameAndPath;
+			var reqLength = req.length;
+			var signedMessageLength = reqLength + hostnameAndPath.length;
 			var signedMessage = new Buffer(signedMessageLength);
+			req.copy(signedMessage);
+			signedMessage.write(hostnameAndPath, reqLength);
 
 			if (keyRing instanceof cryptopp.KeyRing){
-
-				keyRing.sign(_stuff, 'base64', undefined, callback);
+				keyRing.sign(signedMessage.toString('utf8'), 'base64', undefined, callback);
 			} else if (keyRing instanceof sodium.KeyRing) {
-				var _stuff;
-				if (!Buffer.isBuffer(stuff)) _stuff = new Buffer(stuff);
-				else _stuff = stuff;
-				keyRing.sign(_stuff, function(signature){
+				keyRing.sign(signedMessage, function(signature){
 					callback(signature.toString('base64'));
 				}, true); //Last parameter : detached signature
 			} else throw new TypeError('Unknown KeyRing type');
@@ -726,7 +731,7 @@ exports.client = function(keyFilename, usernameVal){
 						httpReq.end();
 					});
 				})
-			}, 'base64');
+			});
 		});
 	};
 
@@ -744,7 +749,7 @@ exports.client = function(keyFilename, usernameVal){
 };
 
 function buildPayloadWithoutSignature(keyRing, username, actionType, callback, encoding){
-	if (!(keyRing && (keyRing instanceof cryptopp.KeyRing || keyRing instanceof sodium.KeyRing))) throw new TypeError('keyRing must defined and an instance of cryptopp.KeyRing or sodium.KeyRing');
+	if (!(keyRing && ((cryptopp && keyRing instanceof cryptopp.KeyRing) || (sodium && keyRing instanceof sodium.KeyRing)))) throw new TypeError('keyRing must defined and an instance of cryptopp.KeyRing or sodium.KeyRing');
 	if (!(username && typeof username == 'string')) throw new TypeError('username must be a string');
 	if (username.length > 255) throw new TypeError('Username must be at most 255 bytes long');
 	if (!(actionType && typeof actionType == 'number')) actionType = 0x00;
@@ -898,7 +903,7 @@ function buildPayload(keyRing, username, actionType, hostnameAndPath, callback){
 			});
 		} else if (keyType == 'ed25519'){
 			keyRing.sign(signedMessage, function(signature){
-				if (!(Buffer.isBuffer(signature) && signature.length > sodium.api.crypto_sign_BYTES)) throw new TypeError('Invalid signature: ' + signature);
+				if (!(Buffer.isBuffer(signature) && signature.length == sodium.api.crypto_sign_BYTES)) throw new TypeError('Invalid signature: ' + signature);
 				callback(reqEncoded, signature.toString('base64'));
 			}, true); //Last parameter : detached signature
 		} else throw new TypeError('Unknown key type : ' + keyType);
@@ -922,4 +927,23 @@ function getBase64ByteLength(base64){
 	if (base64.indexOf('=') > -1) missingBytes = 1;
 	if (base64.indexOf('==') > -1) missingBytes = 2;
 	return 3 * (base64.length / 4) - missingBytes;
+}
+
+function appendHostAndPathFromReq(reqBlob, httpReq, encoding){
+	if (!(typeof reqBlob == 'string' || Buffer.isBuffer(reqBlob))) throw new TypeError('reqBlob must either be a string or an object');
+	if (typeof httpReq != 'object') throw new TypeError('httpReq must be an object');
+	if (encoding && typeof encoding != 'string') throw new TypeError('When defined, encoding must be a string');
+	var host = httpReq.headers.hostname || httpReq.headers.host.replace(/\d+/, '');
+	if (!host) return undefined;
+	var path = httpReq.url;
+	var hostAndPathLength = host.length + path.length;
+	var hostAndPath = host + path;
+	var reqBuffer;
+	if (!Buffer.isBuffer(reqBlob)){
+		reqBuffer = new Buffer(reqBlob, encoding || 'base64');
+	} else reqBuffer = reqBlob;
+	var signedBlob = new Buffer(reqBuffer.length + hostAndPathLength);
+	reqBuffer.copy(signedBlob);
+	signedBlob.write(hostAndPath, reqBuffer.length);
+	return signedBlob;
 }
