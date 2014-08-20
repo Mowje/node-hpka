@@ -233,6 +233,7 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 		console.log('url: ' + httpReq.url + '\nhostname: ' + httpReq.headers.hostname + '\nhost: ' + httpReq.headers.host);
 		process.exit(1);
 	}
+	//console.log('Blob to verify: ' + signedBlob.toString('utf8'));
 	if ((req.keyType == 'ecdsa' || req.keyType == 'rsa' || req.keyType == 'dsa') && !cryptopp){
 		req.err = 'ECDSA, RSA and DSA are not supported since cryptopp is not installed';
 		req.errcode = 12;
@@ -658,9 +659,9 @@ exports.client = function(keyFilename, usernameVal){
 		if (!fs.existsSync(newKeyPath)) throw new TypeError('The key file doesn\'t exist');
 
 		if (!((options.host || options.hostname) && options.path)) throw new TypeError('hostname and path options must be defined');
-		var hostname = options.hostname || options.host.replace(/\d+/, '');
+		var hostname = options.hostname || options.host.replace(/:\d+/, '');
 		var hostnameAndPath = hostname + options.path;
-		if (!parseHostnameAndPath(hostname)) throw new TypeError('invalid hostname and path values');
+		if (!parseHostnameAndPath(hostnameAndPath)) throw new TypeError('invalid hostname and path values');
 
 		var signReq = function(keyRing, req, callback){
 			if (!keyRing) throw new TypeError('KeyRing has not been defined');
@@ -673,9 +674,9 @@ exports.client = function(keyFilename, usernameVal){
 			req.copy(signedMessage);
 			signedMessage.write(hostnameAndPath, reqLength);
 
-			if (keyRing instanceof cryptopp.KeyRing){
+			if (cryptopp && keyRing instanceof cryptopp.KeyRing){
 				keyRing.sign(signedMessage.toString('utf8'), 'base64', undefined, callback);
-			} else if (keyRing instanceof sodium.KeyRing) {
+			} else if (sodium && keyRing instanceof sodium.KeyRing) {
 				keyRing.sign(signedMessage, function(signature){
 					callback(signature.toString('base64'));
 				}, true); //Last parameter : detached signature
@@ -707,10 +708,10 @@ exports.client = function(keyFilename, usernameVal){
 				var req2Encoded = req2.toString('base64');
 				options.headers['HPKA-NewKey'] = req2Encoded;
 				//Now we sign the that second payload using the keypair known to the server
-				signStuff(keyRing, req2, function(newKeySignature1){
+				signReq(keyRing, req2, function(newKeySignature1){
 					options.headers['HPKA-NewKeySignature'] = newKeySignature1;
 					//Now we sign it again, this time using the new key
-					signStuff(newKeyRing, req2, function(newKeySignature2){
+					signReq(newKeyRing, req2, function(newKeySignature2){
 						options.headers['HPKA-NewKeySignature2'] = newKeySignature2;
 						//Now we clear the "old" keyRing and replace its reference to the newKeyRing
 						keyRing.clear();
@@ -895,6 +896,7 @@ function buildPayload(keyRing, username, actionType, hostnameAndPath, callback){
 		var signedMessage = new Buffer(signedMessageLength);
 		req.copy(signedMessage);
 		signedMessage.write(hostnameAndPath, reqByteLength);
+		//console.log('Signed payload: ' + signedMessage.toString('utf8'));
 		var pubKey = keyRing.publicKeyInfo();
 		var keyType = pubKey.keyType;
 		if (keyType == 'rsa' || keyType == 'dsa' || keyType == 'ecdsa'){
@@ -933,7 +935,7 @@ function appendHostAndPathFromReq(reqBlob, httpReq, encoding){
 	if (!(typeof reqBlob == 'string' || Buffer.isBuffer(reqBlob))) throw new TypeError('reqBlob must either be a string or an object');
 	if (typeof httpReq != 'object') throw new TypeError('httpReq must be an object');
 	if (encoding && typeof encoding != 'string') throw new TypeError('When defined, encoding must be a string');
-	var host = httpReq.headers.hostname || httpReq.headers.host.replace(/\d+/, '');
+	var host = httpReq.headers.hostname || httpReq.headers.host.replace(/:\d+/, '');
 	if (!host) return undefined;
 	var path = httpReq.url;
 	var hostAndPathLength = host.length + path.length;
