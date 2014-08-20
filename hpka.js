@@ -248,18 +248,18 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 	}
 	if (req.keyType == 'ecdsa'){
 		if (req.curveName.indexOf('secp') > -1){ //Checking is the curve is a prime field one
-			cryptopp.ecdsa.prime.verify(signedBlob.toString('utf8'), signature, req.point, req.curveName, 'sha1', function(isValid){
+			cryptopp.ecdsa.prime.verify(signedBlob.toString('hex'), signature, req.point, req.curveName, 'sha1', function(isValid){
 				callback(isValid);
 			});
 		} else if (req.curveName.indexOf('sect') > -1){ //Binary curves aren't supported in ECDSA on binary fields in the node-cryptopp binding lib v0.1.2
 			throw new TypeError("Unsupported curve type. See cryptopp README page");
 		} else throw new TypeError("Unknown curve type");
 	} else if (req.keyType == 'rsa'){
-		cryptopp.rsa.verify(signedBlob.toString('utf8'), signature, req.modulus, req.publicExponent, undefined, function(isValid){
+		cryptopp.rsa.verify(signedBlob.toString('hex'), signature, req.modulus, req.publicExponent, undefined, function(isValid){
 			callback(isValid);
 		});
 	} else if (req.keyType == 'dsa'){
-		cryptopp.dsa.verify(signedBlob.toString('utf8'), signature, req.primeField, req.divider, req.base, req.publicElement, function(isValid){
+		cryptopp.dsa.verify(signedBlob.toString('hex'), signature, req.primeField, req.divider, req.base, req.publicElement, function(isValid){
 			callback(isValid);
 		});
 	} else if (req.keyType == 'ed25519'){
@@ -669,7 +669,7 @@ exports.client = function(keyFilename, usernameVal){
 			if (!(callback && typeof callback == 'function')) throw new TypeError('Callback must be a function');
 
 			var reqLength = req.length;
-			var signedMessageLength = reqLength + hostnameAndPath.length;
+			var signedMessageLength = reqLength + Buffer.byteLength(hostnameAndPath, 'utf8');
 			var signedMessage = new Buffer(signedMessageLength);
 			req.copy(signedMessage);
 			signedMessage.write(hostnameAndPath, reqLength);
@@ -892,7 +892,7 @@ function buildPayload(keyRing, username, actionType, hostnameAndPath, callback){
 		//Note : req is already base64 encoded at this point...
 		var reqEncoded = req.toString('base64');
 		var reqByteLength = req.length;
-		var signedMessageLength = reqByteLength + hostnameAndPath.length;
+		var signedMessageLength = reqByteLength + Buffer.byteLength(hostnameAndPath, 'utf8');
 		var signedMessage = new Buffer(signedMessageLength);
 		req.copy(signedMessage);
 		signedMessage.write(hostnameAndPath, reqByteLength);
@@ -938,8 +938,8 @@ function appendHostAndPathFromReq(reqBlob, httpReq, encoding){
 	var host = httpReq.headers.hostname || httpReq.headers.host.replace(/:\d+/, '');
 	if (!host) return undefined;
 	var path = httpReq.url;
-	var hostAndPathLength = host.length + path.length;
 	var hostAndPath = host + path;
+	var hostAndPathLength = Buffer.byteLength(hostAndPath, 'utf8');
 	var reqBuffer;
 	if (!Buffer.isBuffer(reqBlob)){
 		reqBuffer = new Buffer(reqBlob, encoding || 'base64');
