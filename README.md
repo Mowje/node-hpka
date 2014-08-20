@@ -39,6 +39,8 @@ When authentication succeeds, then the `req` objects recieves the following attr
 * `.username` : the username parsed in from the request
 * `.hpkareq` : the [HPKA-Req object](https://github.com/Mowje/node-hpka#hpkareq-object) parsed from the request
 
+**Please note that in order to avoid replay attacks, your application MUST check that the host/hostname of the request is valid. If you don't, in the context of a distributed network of servers, a server can impersonate one of your users by sending the requests he receives (where the signatures takes the attacker's hostname into account, and where you don't check that the requests you receive are signed while taking your hostname into account; the attacking server can then request from the target server the same resource that the user requested from the attacking server).**
+
 ## Usage
 
 **NOTE:** API has changed as of v0.2.0
@@ -70,9 +72,9 @@ The module exposes 6 methods :
 	* req : the [expressjs req](http://expressjs.com/api.html#req.params) object, in case you want to you know what was the route requested by the client
 	* res : the [expressjs res](http://expressjs.com/api.html#res.status) object, allowing you to send a message to the client and what not
 * strict : must be a boolean when defined. Defines whether it shows error message when there is a problem, or just renders the page while ignoring the authentication request (like if it was normal HTTP request). Note that this applies to all error types except a "unavailable username" error.
-	
+
 Note that :
- 
+
 * you must use either ```res``` or ```callback``` in loginCheck to send a response to the client
 * but you **must** use ```res``` in registration to send a response to the client
 
@@ -80,7 +82,7 @@ Note that :
 ```hpka.httpMiddlware(requestHandler, loginCheck, registartion, userDeletion, keyRotation, strict)```: middleware building function for the standard [HTTP](http://nodejs.org/api/http.html) and [HTTPS](http://nodejs.org/api/https.html) libraries. The result of this function should be used as the ```requestHandler``` in the ```createServer``` methods of these libraries. The function receives the following parameters :
 
 * requestHandler(req, res) : the request handler you would normally put in the ```createServer``` methods of the 2 default HTTP stacks
-* loginCheck(HPKAReq, res, callback(Boolean)) : 
+* loginCheck(HPKAReq, res, callback(Boolean)) :
 	* HPKAReq : the HPKAReq object, [as descibed below](https://github.com/Mowje/node-hpka#hpkareq-object)
 	* req : the [request](http://nodejs.org/api/http.html#http_http_incomingmessage) object, in case you want to know which path was requested by the user for example
 	* res : the [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object, in case you want to show some error pages or something
@@ -142,7 +144,7 @@ Build (asynchronously) a client HPKA payload with the given parameters:
 	* isValid : a boolean, true if the signature is valid, false if it isn't (thanks Captain Obvious)
 	* username : username found in the reuquest
 	* HPKAReq : the HPKAReq object extracted from the HPKA-Req header  
-	
+
 ## Using the client with Tor (or any SOCKS5 proxy server)
 
 I see 2 ways of doing this:
@@ -152,7 +154,7 @@ I see 2 ways of doing this:
 
 Note that the first technique is probably more convenient since you have to specify the Tor address and port only once (ie, when instanciating the agent)
 
-Note also that if you want to host a server with HPKA as a hidden service, you can simply use [node-ths](https://github.com/Mowje/node-ths).
+Note also that if you want to host a server with HPKA as a hidden service, you can simply use something like [node-ths](https://github.com/Mowje/node-ths).
 
 ## HPKAReq object
 
