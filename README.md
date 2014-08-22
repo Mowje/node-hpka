@@ -126,11 +126,12 @@ Note that :
 * setHttpsMod(httpsRef), set the https module you want to use :
 	* httpsRef : the https module you want to use, overriding the [default one](https://nodejs.org/api/https.html). To go back to the default module, call the method again with no parameter. Example use case : using HPKA with Tor, as explained below.
 
-```hpka.createClientKey(keyType, options, filename, password)```: creates a new keypair file  
+```hpka.createClientKey(keyType, options, filename, password, doNotReturn)```: creates a new keypair file. Returns the underlying KeyRing object when finished
 * keyType : must be either 'ecdsa', 'rsa', 'dsa' or 'ed25519'
 * options : the curve name for ecdsa, the key size for RSA and RSA.
 * filename : path where the key file should be stored.
 * password : password that will be used to encrypt the newly generated key, only for ed25519 keys
+* doNotReturn : if defined, then the KeyRing object is cleared from memory and not returned. I recommend the use of this parameter in case you're not going to use the key right away / ignoring the returned KeyRing object
 
 ```hpka.changeClientKeyPassword(keyFilename, oldPassword, newPassword)```: Change the password used to encrypt a given key file. **Only for Ed25519 key files!**  
 * keyFilename : string, absolute or relative path to the key file
