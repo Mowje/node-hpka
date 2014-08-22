@@ -19,6 +19,7 @@ if (algosToTest.length == 0){
 
 var userList = {};
 var testUsername = 'test';
+var testPassword = 'password';
 
 var testKeyType = 'rsa';
 var testKeyOptions = {
@@ -169,13 +170,13 @@ function testStuff(callback){
 	//console.log('Looking for a client key');
 	if (!fs.existsSync(keyPath)){
 		//console.log('Creating a client key');
-		keyRing = hpka.createClientKey(testKeyType, testKeyOptions[testKeyType], keyPath);
+		keyRing = hpka.createClientKey(testKeyType, testKeyOptions[testKeyType], keyPath, (testKeyType == 'ed25519' ? testPassword : undefined));
 		//console.log('Generated key pair : ' + JSON.stringify(keyRing.publicKeyInfo()));
 	}
 
 	if (!fs.existsSync(newKeyPath)){
 		//console.log('Creating second client key');
-		keyRing2 = hpka.createClientKey(testKeyType, testKeyOptions[testKeyType], newKeyPath);
+		keyRing2 = hpka.createClientKey(testKeyType, testKeyOptions[testKeyType], newKeyPath, (testKeyType == 'ed25519' ? testPassword : undefined));
 		//console.log('Second generated key pair : ' + JSON.stringify(keyRing2.publicKeyInfo()));
 	}
 
@@ -187,7 +188,7 @@ function testStuff(callback){
 	};
 
 	//Sorry for the callback hell. :/ I just wanted to finish that stuff so I can code some "more interesting stuff" than a testing script.
-	var client = new hpka.client(keyPath, testUsername);
+	var client = new hpka.client(keyPath, testUsername, (testKeyType == 'ed25519' ? testPassword : undefined));
 	//First making an unauthenticated request
 	var unauthReq = http.request(reqOptions, function(res){
 		assert.equal(res.statusCode, 200, 'On successful anonymous requests, status code must be 200');
@@ -232,7 +233,7 @@ function testStuff(callback){
 										});
 									});
 								});
-							});
+							}, testPassword); //Passing the keyFile password into the rotateKeys method
 						});
 					})
 				});

@@ -551,8 +551,9 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 * CLIENT METHODS
 */
 //Create a client key pair and returns its keyring
-exports.createClientKey = function(keyType, options, filename){
+exports.createClientKey = function(keyType, options, filename, password, doNotReturn){
 	if (!(keyType == 'ecdsa' || keyType == 'dsa' || keyType == 'rsa' || keyType == 'ed25519')) throw new TypeError("Invalid key type. Must be either 'ecdsa', 'dsa' or 'rsa'");
+	if (password && !(Buffer.isBuffer(password) || typeof password == 'string')) throw new TypeError('When defined, password must either be a buffer or a string');
 	var keyRing;
 	if (keyType == 'ecdsa' || keyType == 'dsa' || keyType == 'rsa'){ //Crypto++ cases
 		keyRing = new cryptopp.KeyRing();
@@ -576,16 +577,48 @@ exports.createClientKey = function(keyType, options, filename){
 	} else if (keyType == 'ed25519'){ //Ed25519
 		keyRing = new sodium.KeyRing();
 		keyRing.createKeyPair('ed25519');
-		keyRing.save(filename);
+		if (password){
+			keyRing.save(filename, undefined, password);
+		} else {
+			keyRing.save(filename);
+		}
 	}
 	//console.log('Generated key type : ' + keyRing.publicKeyInfo().keyType);
+	if (doNotReturn){
+		keyRing.clear();
+		return;
+	}
 	return keyRing;
-}
+};
+
+exports.changeClientKeyPassword = function(keyFilename, oldPassword, newPassword){
+	if (!fs.existsSync(keyFilename)) throw new TypeError('The key file doesn\'t exist');
+	if (!(Buffer.isBuffer(oldPassword)))
+	var keyFileType = new Buffer(1);
+	var fileHandle = fs.openSync(keyFilename, 'rs'); //'rs' flag for readSync
+	var bytesRead = fs.readSync(fileHandle, keyFileType, 0, 1, 0);
+	fs.closeSync(fileHandle);
+	if (bytesRead != 1) throw new Error('Error while reading the key file to determine the key type. Bytes read : ' + bytesRead);
+
+	if (keyFileType[0] != 0x06) throw new TypeError('Only Ed25519 key files can be encrypted');
+
+	var tempKeyRing = new sodium.KeyRing();
+	var pubKey;
+	try {
+		pubKey = tempKeyRing.load(keyFilename, undefined, oldPassword);
+	} catch (e){
+
+	}
+	if (!pubKey) throw new TypeError('invalid password, or the file is not encrypted');
+	tempKeyRing.save(keyFilename, undefined, newPassword);
+	tempKeyRing.clear();
+};
 
 //Client object builder
-exports.client = function(keyFilename, usernameVal){
+exports.client = function(keyFilename, usernameVal, password){
 	if (typeof usernameVal != 'string') throw new TypeError('Username must be a string');
 	if (!fs.existsSync(keyFilename)) throw new TypeError('Key file not found'); //Checking that the file exists
+	if (password && !(Buffer.isBuffer(password) || typeof password == 'string')) throw new TypeError('When defined, password must either be a buffer or a string');
 	var keyFileType = new Buffer(1);
 	var fileHandle = fs.openSync(keyFilename, 'rs'); //'rs' flag for readSync
 	var bytesRead = fs.readSync(fileHandle, keyFileType, 0, 1, 0);
@@ -601,7 +634,11 @@ exports.client = function(keyFilename, usernameVal){
 		keyRing = new sodium.KeyRing();
 	} else throw new TypeError('Unknown key file type: ' + keyFileType.toJSON());
 	var username = usernameVal;
-	keyRing.load(keyFilename);
+	if (keyFileType[0] == 0x06 && password){ //Ed25519
+		keyRing.load(keyFilename, undefined, password);
+	} else {
+		keyRing.load(keyFilename);
+	}
 	try{
 		keyRing.publicKeyInfo();
 	} catch(e){
@@ -651,12 +688,14 @@ exports.client = function(keyFilename, usernameVal){
 		stdReq(options, undefined, 0x02, callback);
 	};
 
-	this.rotateKeys = function(options, newKeyPath, callback){
+	this.rotateKeys = function(options, newKeyPath, callback, password){
 		if (!(options && typeof options == 'object')) throw new TypeError('"options" parameter must be defined and must be an object, according to the default http(s) node modules & node-hpka documentations');
 		if (!(newKeyPath && typeof newKeyPath == 'string')) throw new TypeError('"newKeyPath" parameter must be a string, a path to the file containing the new key you want to use');
 		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
 		if (!options.headers) options.headers = {};
 		if (!fs.existsSync(newKeyPath)) throw new TypeError('The key file doesn\'t exist');
+
+		if (password && !(Buffer.isBuffer(password) || typeof password == 'string')) throw new TypeError('When defined, password must either be a buffer or a string');
 
 		if (!((options.host || options.hostname) && options.path)) throw new TypeError('hostname and path options must be defined');
 		var hostname = options.hostname || options.host.replace(/:\d+/, '');
@@ -697,7 +736,12 @@ exports.client = function(keyFilename, usernameVal){
 		} else if (keyFileType[0] == 0x06) { //Then, sodium keyring
 			newKeyRing = new sodium.KeyRing();
 		} else throw new TypeError('Unknown key file type : ' + keyFileType.toJSON());
-		newKeyRing.load(newKeyPath);
+
+		if (keyFileType[0] == 0x06 && password){
+			newKeyRing.load(newKeyPath, undefined, password);
+		} else {
+			newKeyRing.load(newKeyPath);
+		}
 
 		//First we build the payload with the known key and sign it
 		buildPayload(keyRing, username, 0x03, hostnameAndPath, function(req1, signature1){
@@ -746,6 +790,10 @@ exports.client = function(keyFilename, usernameVal){
 		if (_httpsRef){
 			httpsRef = _httpsRef;
 		} else httpsRef = https;
+	};
+
+	this.clear = function(){
+		keyRing.clear();
 	};
 };
 
