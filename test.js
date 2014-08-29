@@ -9,12 +9,30 @@ var http = require('http');
 var fs = require('fs');
 var assert = require('assert');
 var hpka = require('./hpka');
+var cryptopp, sodium;
 
 var algosToTest = hpka.supportedAlgorithms();
 console.log('Supported algorithms: ' + JSON.stringify(algosToTest));
 if (algosToTest.length == 0){
 	console.log('Nothing to be tested, since nor cryptopp or sodium are installed');
 	process.exit(1);
+}
+
+var useKeyRing = process.argv.length > 2 && process.argv[2] == 'keyring';
+
+if (useKeyRing){
+	console.log('Using KeyRings on clients instanciation');
+	//Load the crypto modules so we have access to the KeyRings constructors
+	try {
+		cryptopp = require('cryptopp');
+	} catch (e){
+
+	}
+	try {
+		sodium = require('sodium');
+	} catch (e){
+
+	}
 }
 
 var userList = {};
@@ -188,7 +206,20 @@ function testStuff(callback){
 	};
 
 	//Sorry for the callback hell. :/ I just wanted to finish that stuff so I can code some "more interesting stuff" than a testing script.
-	var client = new hpka.client(keyPath, testUsername, (testKeyType == 'ed25519' ? testPassword : undefined));
+	var client;
+	if (useKeyRing){
+		var kr;
+		if (testKeyType == 'ed25519'){
+			kr = new sodium.KeyRing();
+			kr.load(keyPath, undefined, testPassword);
+		} else {
+			kr = new cryptopp.KeyRing();
+			kr.load(keyPath);
+		}
+		client = new hpka.client(kr, testUsername);
+	} else {
+		client = new hpka.client(keyPath, testUsername, (testKeyType == 'ed25519' ? testPassword : undefined));
+	}
 	//First making an unauthenticated request
 	var unauthReq = http.request(reqOptions, function(res){
 		assert.equal(res.statusCode, 200, 'On successful anonymous requests, status code must be 200');

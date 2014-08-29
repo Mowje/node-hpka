@@ -617,32 +617,43 @@ exports.changeClientKeyPassword = function(keyFilename, oldPassword, newPassword
 //Client object builder
 exports.client = function(keyFilename, usernameVal, password){
 	if (typeof usernameVal != 'string') throw new TypeError('Username must be a string');
-	if (!fs.existsSync(keyFilename)) throw new TypeError('Key file not found'); //Checking that the file exists
-	if (password && !(Buffer.isBuffer(password) || typeof password == 'string')) throw new TypeError('When defined, password must either be a buffer or a string');
-	var keyFileType = new Buffer(1);
-	var fileHandle = fs.openSync(keyFilename, 'rs'); //'rs' flag for readSync
-	var bytesRead = fs.readSync(fileHandle, keyFileType, 0, 1, 0);
-	fs.closeSync(fileHandle);
-	if (bytesRead != 1) throw new Error('Error while reading the key file to determine the key type. Bytes read : ' + bytesRead);
-	//console.log('key type: ' + keyFileType.toJSON());
-	var keyRing;
-	if (keyFileType[0] < 0x05){ //A key file produced by cryptopp begins with "key"
-		//console.log('Cryptopp keyring');
-		keyRing = new cryptopp.KeyRing();
-	} else if (keyFileType[0] == 0x06){ //Checking that, according the first byte, the key is a Ed25519 one
-		//console.log('Sodium keyring');
-		keyRing = new sodium.KeyRing();
-	} else throw new TypeError('Unknown key file type: ' + keyFileType.toJSON());
-	var username = usernameVal;
-	if (keyFileType[0] == 0x06 && password){ //Ed25519
-		keyRing.load(keyFilename, undefined, password);
+	var keyRing, username;
+	//keyFilename is either the path to the key file, or the keyring instance
+	if ((cryptopp && keyFilename instanceof cryptopp.KeyRing) || (sodium && keyFilename instanceof sodium.KeyRing)){
+		username = usernameVal;
+		keyRing = keyFilename;
+		try {
+			keyRing.publicKeyInfo()
+		} catch (e){
+			throw new TypeError('The passed KeyRing has no key loaded into it');
+		}
 	} else {
-		keyRing.load(keyFilename);
-	}
-	try{
-		keyRing.publicKeyInfo();
-	} catch(e){
-		throw new TypeError("Invalid key file");
+		if (!fs.existsSync(keyFilename)) throw new TypeError('Key file not found'); //Checking that the file exists
+		if (password && !(Buffer.isBuffer(password) || typeof password == 'string')) throw new TypeError('When defined, password must either be a buffer or a string');
+		var keyFileType = new Buffer(1);
+		var fileHandle = fs.openSync(keyFilename, 'rs'); //'rs' flag for readSync
+		var bytesRead = fs.readSync(fileHandle, keyFileType, 0, 1, 0);
+		fs.closeSync(fileHandle);
+		if (bytesRead != 1) throw new Error('Error while reading the key file to determine the key type. Bytes read : ' + bytesRead);
+		//console.log('key type: ' + keyFileType.toJSON());
+		if (keyFileType[0] < 0x05){ //A key file produced by cryptopp begins with "key"
+			//console.log('Cryptopp keyring');
+			keyRing = new cryptopp.KeyRing();
+		} else if (keyFileType[0] == 0x06){ //Checking that, according the first byte, the key is a Ed25519 one
+			//console.log('Sodium keyring');
+			keyRing = new sodium.KeyRing();
+		} else throw new TypeError('Unknown key file type: ' + keyFileType.toJSON());
+		username = usernameVal;
+		if (keyFileType[0] == 0x06 && password){ //Ed25519
+			keyRing.load(keyFilename, undefined, password);
+		} else {
+			keyRing.load(keyFilename);
+		}
+		try{
+			keyRing.publicKeyInfo();
+		} catch(e){
+			throw new TypeError("Invalid key file");
+		}
 	}
 
 	var httpRef = http;
