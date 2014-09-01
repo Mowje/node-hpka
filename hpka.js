@@ -659,11 +659,12 @@ exports.client = function(keyFilename, usernameVal, password){
 	var httpRef = http;
 	var httpsRef = https;
 
-	function stdReq(options, body, actionType, callback){
+	function stdReq(options, body, actionType, callback, errorHandler){
 		if (!(options && typeof options == 'object')) throw new TypeError('"options" parameter must be defined and must be an object, according to the default http(s) node modules & node-hpka documentations');
 		if (!(typeof actionType == 'number')) throw new TypeError('"actionType" parameter must be defined and must be a number');
 		if (!(actionType >= 0x00 && actionType <= 0x02)) throw new TypeError('"actionType" parameter must be 0x00 <= actionType <= 0x02 when calling stdReq(). Note that keyRotations have their methods (because they require than a simple HPKA-Req blob and its signature');
 		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
+		if (errorHandler && typeof errorHandler != 'function') throw new TypeError('"errorHandler must be a function"');
 		if (!options.headers) options.headers = {};
 		if (!(options.hostname && options.path)) throw new TypeError('hostname and path options must be specified')
 		var hostnameAndPath = options.hostname + options.path;
@@ -682,27 +683,29 @@ exports.client = function(keyFilename, usernameVal, password){
 					if (callback) callback(res);
 				});
 			}
+			if (errorHandler) req.on('error', errorHandler);
 			if (body) req.write(body);
 			req.end();
 		});
 	}
 
-	this.request = function(options, body, callback){
-		stdReq(options, body, 0x00, callback);
+	this.request = function(options, body, callback, errorHandler){
+		stdReq(options, body, 0x00, callback, errorHandler);
 	};
 
-	this.registerUser = function(options, callback){
-		stdReq(options, undefined, 0x01, callback);
+	this.registerUser = function(options, callback, errorHandler){
+		stdReq(options, undefined, 0x01, callback, errorHandler);
 	};
 
-	this.deleteUser = function(options, callback){
-		stdReq(options, undefined, 0x02, callback);
+	this.deleteUser = function(options, callback, errorHandler){
+		stdReq(options, undefined, 0x02, callback, errorHandler);
 	};
 
-	this.rotateKeys = function(options, newKeyPath, callback, password){
+	this.rotateKeys = function(options, newKeyPath, callback, password, errorHandler){
 		if (!(options && typeof options == 'object')) throw new TypeError('"options" parameter must be defined and must be an object, according to the default http(s) node modules & node-hpka documentations');
 		if (!(newKeyPath && typeof newKeyPath == 'string')) throw new TypeError('"newKeyPath" parameter must be a string, a path to the file containing the new key you want to use');
 		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
+		if (errorHandler && typeof errorHandler != 'function') throw new TypeError('when defined, errorHandler must be a function');
 		if (!options.headers) options.headers = {};
 		if (!fs.existsSync(newKeyPath)) throw new TypeError('The key file doesn\'t exist');
 
@@ -784,6 +787,7 @@ exports.client = function(keyFilename, usernameVal, password){
 								callback(res);
 							});
 						}
+						if (errorHandler) httpReq.on('error', errorHandler);
 						httpReq.end();
 					});
 				})
