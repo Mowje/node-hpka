@@ -10,6 +10,12 @@ try {
 } catch (e){
 
 }
+var FormData;
+try {
+	FormData = require('form-data');
+} catch (e){
+
+}
 
 if (!(sodium || cryptopp)) throw new TypeError('No sodium or cryptopp modules found. At least one of them must be installed');
 
@@ -668,8 +674,8 @@ exports.client = function(keyFilename, usernameVal, password){
 		if (!options.headers) options.headers = {};
 		if (!(options.hostname && options.path)) throw new TypeError('hostname and path options must be specified')
 		var hostnameAndPath = options.hostname + options.path;
-		buildPayload(keyRing, username, actionType, hostnameAndPath, function(req, signature){
-			options.headers['HPKA-Req'] = req;
+		buildPayload(keyRing, username, actionType, hostnameAndPath, function(hpkaReq, signature){
+			options.headers['HPKA-Req'] = hpkaReq;
 			options.headers['HPKA-Signature'] = signature;
 			var req;
 			if (options.protocol && options.protocol == 'https'){
@@ -684,8 +690,22 @@ exports.client = function(keyFilename, usernameVal, password){
 				});
 			}
 			if (errorHandler) req.on('error', errorHandler);
-			if (body) req.write(body);
-			req.end();
+			if (body){
+				if (Buffer.isBuffer(body) || typeof body == 'string'){
+					req.write(body);
+					req.end();
+				} else if (FormData && body instanceof FormData){
+					options.headers = body.getHeaders();
+					options.headers['HPKA-Req'] = hpkaReq;
+					options.headers['HPKA-Signature'] = signature;
+					body.pipe(req);
+				} else {
+					var err = new TypeError('invalid request body type');
+					if (errorHandler) errorHandler(err);
+					else throw err;
+					return;
+				}
+			} else req.end();
 		});
 	}
 

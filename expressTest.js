@@ -11,6 +11,7 @@ var app = express();
 var fs = require('fs');
 var assert = require('assert');
 var hpka = require('./hpka');
+var FormData = require('form-data');
 
 var algosToTest = hpka.supportedAlgorithms();
 console.log('Supported algorithms: ' + JSON.stringify(algosToTest));
@@ -98,6 +99,12 @@ var requestHandler = function(req, res){
 	res.end();
 };
 
+var postHandler = function(req, res){
+	//var d = {value1: req.body.value1, value2: req.body.value2};
+	console.log('Received form data: ' + JSON.stringify(req.body));
+	res.send(200, 'OK');
+};
+
 var loginCheck = function(HPKAReq, req, res, callback){
 	if (userList[HPKAReq.username] && typeof userList[HPKAReq.username] == 'object' && checkPubKeyObjects(getPubKeyObject(HPKAReq), userList[HPKAReq.username])) callback(true);
 	else callback(false);
@@ -152,8 +159,13 @@ var keyRotation = function(HPKAReq, newKeyReq, req, res){
 	res.end();
 };
 
+app.use(express.bodyParser());
+app.use(express.methodOverride());
 app.use(hpka.expressMiddleware(loginCheck, registration, deletion, keyRotation, true));
+app.use(app.router);
+
 app.get('/', requestHandler);
+app.post('/', postHandler);
 
 app.listen(2500);
 
@@ -204,28 +216,40 @@ function testStuff(callback){
 						assert.equal(res2.statusCode, 200, 'Successful autheticated request must have status code 200');
 						res2.on('data', function(data){
 							assert.equal(data, 'Authenticated as : ' + testUsername, 'Unexpected message on authenticated request : ' + data);
-							//Rotating keys
-							client.rotateKeys(reqOptions, newKeyPath, function(res3){
-								assert.equal(res3.statusCode, 200, 'Successful key rotation must have status code 200');
-								res3.on('data', function(data){
-									assert.equal(data, 'Keys have been rotated!', 'Unexpected message on key rotation : ' + data);
-									//Checking that the key rotation was done properly by sending an authenticated request using the new key
-									client.request(reqOptions, undefined, function(res4){
-										assert.equal(res4.statusCode, 200, 'Successful authenticated request have status code 200');
-										res4.on('data', function(data){
-											assert.equal(data, 'Authenticated as : ' + testUsername, 'Unexpected message on authenticated request : ' + data);
-											//Deleting user
-											client.deleteUser(reqOptions, function(res5){
-												assert.equal(res5.statusCode, 200, 'Successful account deletion must have status code 200');
-												res5.on('data', function(data){
-													assert.equal(data, testUsername + ' has been deleted!', 'Unexpected deletion message : ' + data);
-													//Trying to do an authenticated request in order to trigger an error (since the user has just been deleted)
-													client.request(reqOptions, undefined, function(res6){
-														assert.equal(res6.statusCode, 445, 'Status code must be 445, but it\'s ' + res6.statusCode + ' instead');
-														res6.on('data', function(data){
-															assert.equal(data, 'Invalid key or unregistered user', 'The user didn\'t seem to be deleted, even a HPKA delete request was sent');
-															//console.log('Received data from server (auth request after user deletion) : ' + data);
-															if (callback) callback();
+							//Testing requests with form data
+							var f = new FormData();
+							f.append('field-one', 'test');
+							f.append('field-two', 'test 2');
+							reqOptions.method = 'POST';
+							client.request(reqOptions, f, function(fRes){
+								assert.equal(fRes.statusCode, 200, 'Something went wrong when trying to post a form');
+								fRes.on('data', function(data){
+									assert.equal(data, 'OK', 'Response of form posting must be "OK"');
+									//Rotating keys
+									reqOptions.method = 'GET';
+									client.rotateKeys(reqOptions, newKeyPath, function(res3){
+										assert.equal(res3.statusCode, 200, 'Successful key rotation must have status code 200');
+										res3.on('data', function(data){
+											assert.equal(data, 'Keys have been rotated!', 'Unexpected message on key rotation : ' + data);
+											//Checking that the key rotation was done properly by sending an authenticated request using the new key
+											client.request(reqOptions, undefined, function(res4){
+												assert.equal(res4.statusCode, 200, 'Successful authenticated request have status code 200');
+												res4.on('data', function(data){
+													assert.equal(data, 'Authenticated as : ' + testUsername, 'Unexpected message on authenticated request : ' + data);
+													//Deleting user
+													client.deleteUser(reqOptions, function(res5){
+														assert.equal(res5.statusCode, 200, 'Successful account deletion must have status code 200');
+														res5.on('data', function(data){
+															assert.equal(data, testUsername + ' has been deleted!', 'Unexpected deletion message : ' + data);
+															//Trying to do an authenticated request in order to trigger an error (since the user has just been deleted)
+															client.request(reqOptions, undefined, function(res6){
+																assert.equal(res6.statusCode, 445, 'Status code must be 445, but it\'s ' + res6.statusCode + ' instead');
+																res6.on('data', function(data){
+																	assert.equal(data, 'Invalid key or unregistered user', 'The user didn\'t seem to be deleted, even a HPKA delete request was sent');
+																	//console.log('Received data from server (auth request after user deletion) : ' + data);
+																	if (callback) callback();
+																});
+															});
 														});
 													});
 												});
