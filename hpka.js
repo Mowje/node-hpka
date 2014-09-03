@@ -348,7 +348,7 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 							} else if (HPKAReq.actionType == 1){
 								//Registration
 								//console.log('Calling registration handler');
-								registration(HPKAReq, req, res);
+								registration(HPKAReq, req, res, next);
 								return;
 							} else if (HPKAReq.actionType == 2){
 								//User deletion
@@ -377,7 +377,7 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 									if (newKeySignIsValid){
 										verifySignatureWithoutProcessing(newKeyReq, newKeyBlob, req, newKeySignature2, function(newKeySign2IsValid){
 											if (newKeySign2IsValid){
-												keyRotation(HPKAReq, newKeyReq, req, res);
+												keyRotation(HPKAReq, newKeyReq, req, res, next);
 											} else {
 												res.status(445).set('HPKA-Error', 2);
 												res.send('Self-signature on new key is invalid');
@@ -462,6 +462,10 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 				try {
 					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, req, HPKASignature, function(isValid){
 						if (isValid){
+							function next(){
+								requestHandler(req, res);
+							}
+
 							//console.log('Signature is valid');
 							//Checking the action type and calling the right handlers
 							if (HPKAReq.actionType == 0x00){ //Authenticated HTTP request
@@ -469,17 +473,17 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 									if (isValid){
 										req.username = HPKAReq.username;
 										req.hpkareq = HPKAReq;
-										requestHandler(req, res);
+										next();
 									} else {
 										if (strict){
 											writeErrorRes(res, 'Invalid key or unregistered user', 3);
 										} else {
-											requestHandler(req, res);
+											next();
 										}
 									}
 								});
 							} else if (HPKAReq.actionType == 0x01){ //Registration request
-								registration(HPKAReq, req, res);
+								registration(HPKAReq, req, res, next);
 								return;
 							} else if (HPKAReq.actionType == 0x02){ //User deletion request
 								deletion(HPKAReq, req, res);
@@ -506,7 +510,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 									if (newKeySignIsValid){
 										verifySignatureWithoutProcessing(newKeyReq, newKeyBlob, req, newKeySignature2, function(newKeySign2IsValid){
 											if (newKeySign2IsValid){
-												keyRotation(HPKAReq, newKeyReq, req, res);
+												keyRotation(HPKAReq, newKeyReq, req, res, next);
 												return;
 											} else {
 												writeErrorRes(res, 'Self-signature on new key is invalid', 2);
@@ -721,15 +725,15 @@ exports.client = function(keyFilename, usernameVal, password){
 		stdReq(options, body, 0x00, callback, errorHandler);
 	};
 
-	this.registerUser = function(options, callback, errorHandler){
-		stdReq(options, undefined, 0x01, callback, errorHandler);
+	this.registerUser = function(options, callback, errorHandler, body){
+		stdReq(options, body, 0x01, callback, errorHandler);
 	};
 
 	this.deleteUser = function(options, callback, errorHandler){
 		stdReq(options, undefined, 0x02, callback, errorHandler);
 	};
 
-	this.rotateKeys = function(options, newKeyPath, callback, password, errorHandler){
+	this.rotateKeys = function(options, newKeyPath, callback, password, errorHandler, body){
 		if (!(options && typeof options == 'object')) throw new TypeError('"options" parameter must be defined and must be an object, according to the default http(s) node modules & node-hpka documentations');
 		if (!(newKeyPath && typeof newKeyPath == 'string')) throw new TypeError('"newKeyPath" parameter must be a string, a path to the file containing the new key you want to use');
 		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
@@ -803,20 +807,36 @@ exports.client = function(keyFilename, usernameVal, password){
 						keyRing.clear();
 						keyRing = newKeyRing;
 						//Now we build the HTTP/S request and send it to the server
+						if (fd && body instanceof fd){
+							var authHeaders = options.headers;
+							options.headers = body.getHeaders();
+							var authHeadersList = Object.keys(authHeaders);
+							for (var i = 0; i < authHeadersList.length; i++){
+								options.headers[authHeadersList[i]] = authHeaders[authHeadersList[i]];
+							}
+						}
 						var httpReq;
 						if (options.protocol && options.protocol == 'https'){
 							options.protocol = null;
-							httpReq = https.request(options, function(res){
+							httpReq = httpsRef.request(options, function(res){
 								callback(res);
 							});
 						} else {
 							options.protocol = null;
-							httpReq = http.request(options, function(res){
+							httpReq = httpRef.request(options, function(res){
 								callback(res);
 							});
 						}
 						if (errorHandler) httpReq.on('error', errorHandler);
-						httpReq.end();
+
+						if (body){
+							if (typeof body == 'string' || Buffer.isBuffer(body)){
+								req.write(body);
+								req.end();
+							} else if (fd && body instanceof fd){
+								body.pipe(req);
+							} else throw new TypeError('unknown body type on key rotation request');
+						} else httpReq.end();
 					});
 				})
 			});

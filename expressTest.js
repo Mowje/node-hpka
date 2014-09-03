@@ -100,8 +100,14 @@ var requestHandler = function(req, res){
 };
 
 var postHandler = function(req, res){
-	console.log('Received form data: ' + JSON.stringify(req.body));
-	console.log('"test" header value: ' + req.headers.test);
+	if (req.body && Object.keys(req.body).length > 0){
+		//console.log('Testing req values');
+		assert.equal(req.body['field-one'], 'test', 'Unexpected form content');
+		assert.equal(req.body['field-two'], 'test 2', 'Unexpected form content');
+		assert.equal(req.headers.test, '1', 'Unexpected value the "test" header');
+	}
+	//console.log('Received form data: ' + JSON.stringify(req.body));
+	//console.log('"test" header value: ' + req.headers.test);
 	if (req.username){
 		res.send(200, 'OK');
 	} else {
