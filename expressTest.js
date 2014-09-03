@@ -101,6 +101,7 @@ var requestHandler = function(req, res){
 
 var postHandler = function(req, res){
 	console.log('Received form data: ' + JSON.stringify(req.body));
+	console.log('"test" header value: ' + req.headers.test);
 	if (req.username){
 		res.send(200, 'OK');
 	} else {
@@ -222,12 +223,14 @@ function testStuff(callback){
 							f.append('field-one', 'test');
 							f.append('field-two', 'test 2');
 							reqOptions.method = 'POST';
+							reqOptions.headers = {'test': 1};
 							client.request(reqOptions, f, function(fRes){
 								assert.equal(fRes.statusCode, 200, 'Something went wrong when trying to post a form');
 								fRes.on('data', function(data){
 									assert.equal(data, 'OK', 'Response of form posting must be "OK"');
 									//Rotating keys
 									reqOptions.method = 'GET';
+									delete reqOptions.headers;
 									client.rotateKeys(reqOptions, newKeyPath, function(res3){
 										assert.equal(res3.statusCode, 200, 'Successful key rotation must have status code 200');
 										res3.on('data', function(data){

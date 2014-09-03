@@ -680,7 +680,12 @@ exports.client = function(keyFilename, usernameVal, password){
 			options.headers['HPKA-Signature'] = signature;
 			var req;
 			if (body && body instanceof fd){
+				var initialHeaders = options.headers;
 				options.headers = body.getHeaders();
+				var initialHeadersNames = Object.keys(initialHeaders);
+				for (var i = 0; i < initialHeadersNames.length; i++){
+					options.headers[initialHeadersNames[i]] = initialHeaders[initialHeadersNames[i]];
+				}
 				options.headers['HPKA-Req'] = hpkaReq;
 				options.headers['HPKA-Signature'] = signature;
 			}
@@ -700,7 +705,7 @@ exports.client = function(keyFilename, usernameVal, password){
 				if (Buffer.isBuffer(body) || typeof body == 'string'){
 					req.write(body);
 					req.end();
-				} else if (FormData && body instanceof fd){
+				} else if (fd && body instanceof fd){
 					body.pipe(req);
 				} else {
 					var err = new TypeError('invalid request body type');
