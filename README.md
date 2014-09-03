@@ -114,7 +114,7 @@ The returned `client` object have the following method(s) :
 * clear() : the clear the internal KeyRing object. This method MUST be called when you finish using the `client` object.
 * request(options, [body], callback, [errorHandler]), send an authenticated HTTP request :
 	* options : the [HTTP](http://nodejs.org/api/http.html)/[HTTPS](http://nodejs.org/api/https.html) options object. Note that if you want to use https, you must set `options.protocol = 'https'`; otherwise, http is used
-	* body : body of the request. Optional. Either a buffer or a string
+	* body : body of the request. Optional. Either a buffer or a string or [FormData](https://github.com/felixge/node-form-data) object 
 	* callback : method that will be called once the request is sent. The callback will have the [response](http://nodejs.org/api/http.html#http_http_incomingmessage) object as unique parameter
 	* errorHandler : optional error handler function
 * registerUser(options, callback, [errorHandler]), register the user on the server :

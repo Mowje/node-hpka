@@ -100,9 +100,12 @@ var requestHandler = function(req, res){
 };
 
 var postHandler = function(req, res){
-	//var d = {value1: req.body.value1, value2: req.body.value2};
 	console.log('Received form data: ' + JSON.stringify(req.body));
-	res.send(200, 'OK');
+	if (req.username){
+		res.send(200, 'OK');
+	} else {
+		res.send(401, 'Not authenticated');
+	}
 };
 
 var loginCheck = function(HPKAReq, req, res, callback){
@@ -160,9 +163,7 @@ var keyRotation = function(HPKAReq, newKeyReq, req, res){
 };
 
 app.use(express.bodyParser());
-app.use(express.methodOverride());
 app.use(hpka.expressMiddleware(loginCheck, registration, deletion, keyRotation, true));
-app.use(app.router);
 
 app.get('/', requestHandler);
 app.post('/', postHandler);

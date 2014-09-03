@@ -10,9 +10,10 @@ try {
 } catch (e){
 
 }
-var FormData;
+//FormData. Renaming it this way because I'm afraid it will conflict with the original FormData in case of usage in node-webkit
+var fd;
 try {
-	FormData = require('form-data');
+	fd = require('form-data');
 } catch (e){
 
 }
@@ -678,6 +679,11 @@ exports.client = function(keyFilename, usernameVal, password){
 			options.headers['HPKA-Req'] = hpkaReq;
 			options.headers['HPKA-Signature'] = signature;
 			var req;
+			if (body && body instanceof fd){
+				options.headers = body.getHeaders();
+				options.headers['HPKA-Req'] = hpkaReq;
+				options.headers['HPKA-Signature'] = signature;
+			}
 			if (options.protocol && options.protocol == 'https'){
 				options.protocol = null;
 				req = httpsRef.request(options, function(res){
@@ -694,10 +700,7 @@ exports.client = function(keyFilename, usernameVal, password){
 				if (Buffer.isBuffer(body) || typeof body == 'string'){
 					req.write(body);
 					req.end();
-				} else if (FormData && body instanceof FormData){
-					options.headers = body.getHeaders();
-					options.headers['HPKA-Req'] = hpkaReq;
-					options.headers['HPKA-Signature'] = signature;
+				} else if (FormData && body instanceof fd){
 					body.pipe(req);
 				} else {
 					var err = new TypeError('invalid request body type');
