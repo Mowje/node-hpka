@@ -348,6 +348,8 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 							} else if (HPKAReq.actionType == 1){
 								//Registration
 								//console.log('Calling registration handler');
+								req.hpkareq = HPKAReq;
+								req.username = HPKAReq.username;
 								registration(HPKAReq, req, res, next);
 								return;
 							} else if (HPKAReq.actionType == 2){
@@ -377,6 +379,8 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 									if (newKeySignIsValid){
 										verifySignatureWithoutProcessing(newKeyReq, newKeyBlob, req, newKeySignature2, function(newKeySign2IsValid){
 											if (newKeySign2IsValid){
+												req.hpkareq = HPKAReq;
+												req.username = HPKAReq.username;
 												keyRotation(HPKAReq, newKeyReq, req, res, next);
 											} else {
 												res.status(445).set('HPKA-Error', 2);
@@ -463,6 +467,8 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, req, HPKASignature, function(isValid){
 						if (isValid){
 							function next(){
+								req.hpkareq = HPKAReq;
+								req.username = HPKAReq.username;
 								requestHandler(req, res);
 							}
 
