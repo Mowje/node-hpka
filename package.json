@@ -1,6 +1,6 @@
 {
   "name": "hpka",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Server and client methods to enable HPKA into your app",
   "main": "hpka.js",
   "scripts": {

@@ -114,6 +114,35 @@ var getCurveName = function(curveID){
 	else return undefined;
 };
 
+var getVerbId = function(verb){
+	if (typeof verb != 'string') throw new TypeError('verb must be a string');
+	verb = verb.toLowerCase();
+	if (verb == 'get') return 0x01;
+	else if (verb == 'post') return 0x02;
+	else if (verb == 'put') return 0x03;
+	else if (verb == 'delete') return 0x04;
+	else if (verb == 'head') return 0x05;
+	else if (verb == 'trace') return 0x06;
+	else if (verb == 'options') return 0x07;
+	else if (verb == 'connect') return 0x08;
+	else if (verb == 'patch') return 0x09;
+	else return undefined;
+};
+
+var getVerbFromId = function(verbID){
+	if (typeof verbID != 'number') throw new TypeError('verbID must be a number');
+	if (verbID == 0x01) return 'get';
+	else if (verbID == 0x02) return 'post';
+	else if (verbID == 0x03) return 'put';
+	else if (verbID == 0x04) return 'delete';
+	else if (verbID == 0x05) return 'head';
+	else if (verbID == 0x06) return 'trace';
+	else if (verbID == 0x07) return 'options';
+	else if (verbID == 0x08) return 'connect';
+	else if (verbID == 0x09) return 'patch';
+	else return undefined;
+};
+
 /*
 * SERVER METHODS
 */
@@ -683,9 +712,10 @@ exports.client = function(keyFilename, usernameVal, password){
 		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
 		if (errorHandler && typeof errorHandler != 'function') throw new TypeError('"errorHandler must be a function"');
 		if (!options.headers) options.headers = {};
+		if (!options.method) options.method = 'get';
 		if (!(options.hostname && options.path)) throw new TypeError('hostname and path options must be specified')
 		var hostnameAndPath = options.hostname + options.path;
-		buildPayload(keyRing, username, actionType, hostnameAndPath, function(hpkaReq, signature){
+		buildPayload(keyRing, username, actionType, hostnameAndPath, options.method, function(hpkaReq, signature){
 			options.headers['HPKA-Req'] = hpkaReq;
 			options.headers['HPKA-Signature'] = signature;
 			var req;
@@ -745,6 +775,7 @@ exports.client = function(keyFilename, usernameVal, password){
 		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
 		if (errorHandler && typeof errorHandler != 'function') throw new TypeError('when defined, errorHandler must be a function');
 		if (!options.headers) options.headers = {};
+		if (!options.method) options.method = 'get';
 		if (!fs.existsSync(newKeyPath)) throw new TypeError('The key file doesn\'t exist');
 
 		if (password && !(Buffer.isBuffer(password) || typeof password == 'string')) throw new TypeError('When defined, password must either be a buffer or a string');
@@ -760,10 +791,11 @@ exports.client = function(keyFilename, usernameVal, password){
 			if (!(callback && typeof callback == 'function')) throw new TypeError('Callback must be a function');
 
 			var reqLength = req.length;
-			var signedMessageLength = reqLength + Buffer.byteLength(hostnameAndPath, 'utf8');
+			var signedMessageLength = reqLength + Buffer.byteLength(hostnameAndPath, 'utf8') + 1; //The additional byte is for verbID
 			var signedMessage = new Buffer(signedMessageLength);
 			req.copy(signedMessage);
-			signedMessage.write(hostnameAndPath, reqLength);
+			signedMessage[reqLength] = getVerbId(options.method);
+			signedMessage.write(hostnameAndPath, reqLength + 1);
 
 			if (cryptopp && keyRing instanceof cryptopp.KeyRing){
 				keyRing.sign(signedMessage.toString('utf8'), 'base64', undefined, callback);
@@ -796,7 +828,7 @@ exports.client = function(keyFilename, usernameVal, password){
 		}
 
 		//First we build the payload with the known key and sign it
-		buildPayload(keyRing, username, 0x03, hostnameAndPath, function(req1, signature1){
+		buildPayload(keyRing, username, 0x03, hostnameAndPath, options.method, function(req1, signature1){
 			options.headers['HPKA-Req'] = req1;
 			options.headers['HPKA-Signature'] = signature1;
 			//Now we build a payload with the new key
@@ -1002,17 +1034,19 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback, e
 	callback(req);
 }
 
-function buildPayload(keyRing, username, actionType, hostnameAndPath, callback){
+function buildPayload(keyRing, username, actionType, hostnameAndPath, verb, callback){
 	if (!(hostnameAndPath && typeof hostnameAndPath == 'string' && parseHostnameAndPath(hostnameAndPath))) throw new TypeError('hostnameAndPath must be a valid string with hostname and path of the request concatenated');
+	if (!(typeof verb == 'string' && getVerbId(verb))) throw new TypeError('invalid HTTP verb');
 	if (!(callback && typeof callback == 'function')) throw new TypeError('callback must be a function');
 	buildPayloadWithoutSignature(keyRing, username, actionType, function(req){
 		//Note : req is already base64 encoded at this point...
 		var reqEncoded = req.toString('base64');
 		var reqByteLength = req.length;
-		var signedMessageLength = reqByteLength + Buffer.byteLength(hostnameAndPath, 'utf8');
+		var signedMessageLength = reqByteLength + Buffer.byteLength(hostnameAndPath, 'utf8') + 1; //The one additional byte is for the verbID
 		var signedMessage = new Buffer(signedMessageLength);
 		req.copy(signedMessage);
-		signedMessage.write(hostnameAndPath, reqByteLength);
+		signedMessage[reqByteLength] = getVerbId(verb);
+		signedMessage.write(hostnameAndPath, reqByteLength + 1);
 		//console.log('Signed payload: ' + signedMessage.toString('utf8'));
 		var pubKey = keyRing.publicKeyInfo();
 		var keyType = pubKey.keyType;
@@ -1056,13 +1090,14 @@ function appendHostAndPathFromReq(reqBlob, httpReq, encoding){
 	if (!host) return undefined;
 	var path = httpReq.url;
 	var hostAndPath = host + path;
-	var hostAndPathLength = Buffer.byteLength(hostAndPath, 'utf8');
+	var hostAndPathLength = Buffer.byteLength(hostAndPath, 'utf8') + 1; //The additional byte is for the verbID
 	var reqBuffer;
 	if (!Buffer.isBuffer(reqBlob)){
 		reqBuffer = new Buffer(reqBlob, encoding || 'base64');
 	} else reqBuffer = reqBlob;
 	var signedBlob = new Buffer(reqBuffer.length + hostAndPathLength);
 	reqBuffer.copy(signedBlob);
-	signedBlob.write(hostAndPath, reqBuffer.length);
+	signedBlob[reqBuffer.length] = getVerbId(httpReq.method);
+	signedBlob.write(hostAndPath, reqBuffer.length + 1);
 	return signedBlob;
 }

@@ -43,9 +43,9 @@ When authentication succeeds, then the `req` objects recieves the following attr
 
 ## Usage
 
-**NOTE:** API has changed as of v0.2.0. Afterwards, there are no API breaks (v0.3.x included)
+**NOTE:** API has changed as of v0.2.0. Afterwards, there are no API breaks (v0.3.x included, aside the removal of an initially internal method called `buildPayload`)
 
-The module exposes 8 methods :
+The module exposes 7 methods :
 
 `hpka.supportedAlgorithms()` : Returns an array containing the signature algorithms supported, depending on what crypto modules are installed
 
@@ -153,20 +153,14 @@ The returned `client` object have the following method(s) :
 * oldPassword : string or buffer, the current key file password
 * newPassword : string or buffer, the new key file password
 
-`hpka.buildPayload(keyRing, username, actionType, callback)`:
+`hpka.buildPayload(keyRing, username, actionType, hostnameAndPath, httpVerb, callback)`:
 Build (asynchronously) a client HPKA payload with the given parameters:  
 * keyRing : a KeyRing instance from [sodium](https://github.com/Mowje/node-sodium.git) or [cryptopp](https://github.com/Mowje/node-cryptopp.git)
 * username : the user's name (a string)
 * actionType : a byte, indicating the action type, as defined in the [HPKA spec](https://github.com/Mowje/hpka#hpka-req-protocol)
+* hostnameAndPath : the hostname and path of the request (with request parameters included, as they are part of it in HTTP), concatenated
+* httpVerb : the HTTP verb used in the request (as a string). Most common ones are : 'get', 'post', 'put', 'delete'
 * callback : a function, that will recieve as parameters the (req, signature) encoded duplet (for the HPKA-Req and HPKA-Signature headers respectively)
-
-`hpka.verifySignature(reqBlob, signature, callback(isValid, username, HPKAReq))`: checks the signature of a HPKA request. To be used if you choose to manage signature verification and actionType handling by yourself  
-* reqBlob : the content of the "HPKA-Req" header
-* signature : the content of the "HPKA-Signature" header
-* callback(isValid, username, HPKAReq) : a function called after the signature verification
-	* isValid : a boolean, true if the signature is valid, false if it isn't (thanks Captain Obvious)
-	* username : username found in the reuquest
-	* HPKAReq : the HPKAReq object extracted from the HPKA-Req header  
 
 ## Using the client with Tor (or any SOCKS5 proxy server)
 
