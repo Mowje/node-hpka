@@ -10,6 +10,7 @@ var fs = require('fs');
 var assert = require('assert');
 var hpka = require('./hpka');
 var cryptopp, sodium;
+var Buffer = require('buffer').Buffer;
 
 var algosToTest = hpka.supportedAlgorithms();
 console.log('Supported algorithms: ' + JSON.stringify(algosToTest));
@@ -105,10 +106,21 @@ var requestHandler = function(req, res){
 	if (req.username){
 		//console.log(req.method + ' ' + req.url + ' authenticated request by ' + req.username);
 		body = 'Authenticated as : ' + req.username;
+		//Manual signature verification
+		var hpkaReq = req.headers['hpka-req'];
+		var hpkaSig = req.headers['hpka-signature'];
+		var method = req.method;
+		var reqUrl = (req.headers.hostname || req.headers.host) + req.url
+		//console.log('HpkaReq: ' + hpkaReq + '; HpkaSig: ' + hpkaSig + '; ' + method + '; reqUrl: ' + reqUrl);
+		hpka.verifySignature(hpkaReq, hpkaSig, reqUrl, method, function(isValid, username, hpkaReq){
+			if (!isValid) console.log('External validation failed');
+			console.log(username + ': ' + JSON.stringify(hpkaReq));
+		});
 	} else {
 		//console.log(req.method + ' ' + req.url + ' anonymous request');
 		body = 'Anonymous user';
 	}
+
 	headers['Content-Length'] = body.length;
 	res.writeHead(200, headers);
 	res.write(body);

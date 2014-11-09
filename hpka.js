@@ -24,6 +24,7 @@ var fs = require('fs');
 var Buffer = require('buffer').Buffer;
 var http = require('http');
 var https = require('https');
+var url = require('url');
 
 exports.supportedAlgorithms = function(){
 	var algos = [];
@@ -263,6 +264,10 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 	//console.log('Parsed req : ' + JSON.stringify(req));
 	//console.log('Verfying signature');
 	var signedBlob = appendHostAndPathFromReq(reqBlob, httpReq);
+	if (req.keyType == 'ed25519'){
+		console.log('reqBlob\n' + (new Buffer(reqBlob, 'base64')).toString('hex'));
+		console.log('signedBlob\n' + signedBlob.toString('hex'));
+	}
 	if (!signedBlob){
 		console.log('Error: can\'t get the blob of which we have to check the authenticity');
 		console.log('reqBlob:\n' + JSON.stringify(reqBlob));
@@ -309,15 +314,33 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 };
 
 //This method is not used anywhere...
-/*var verifySignature = function(reqBlob, signature, callback){
+var verifySignature = function(reqBlob, signature, reqUrl, method, callback){
+	if (typeof reqBlob != 'string') throw new TypeError('reqBlob must be a base64 string');
+	if (!(Buffer.isBuffer(signature) || typeof signature == 'string')) throw new TypeError('signature must either be a buffer or a string');
+	if (typeof reqUrl != 'string') throw new TypeError('reqUrl must be a string');
+	if (typeof method != 'string') throw new TypeError('method must be a string');
+
 	var req = processReqBlob(reqBlob);
-	verifySignatureWithoutProcessing(req, reqBlob, signature, function(isValid){
-		if (isValid) callback(true, req.username, req);
-		else callback(false);
+	//var reqVerb = getVerbFromId(method);
+	var reqUrlStr = reqUrl.toString('utf8'); //Start after the first byte (being the verbId);
+	//var reqUrlObj = url.parse(reqUrl);
+	var parsedUrl = url.parse(reqUrlStr);
+	var httpReqMimic = {
+		headers: {
+			host: parsedUrl.hostname || parsedUrl.host,
+			url: parsedUrl.path
+		},
+		method: method
+	};
+	//console.log('httpReqMimic: ' + JSON.stringify(httpReqMimic));
+	verifySignatureWithoutProcessing(req, reqBlob, httpReqMimic, signature, function(isValid){
+		callback(isValid, req.username, req);
+		//if (isValid) callback(true, req.username, req);
+		//else callback(false);
 	});
 };
 
-exports.verifySignature = verifySignature;*/
+exports.verifySignature = verifySignature;
 
 //Expressjs middlware builder
 /* Config object signature
