@@ -264,10 +264,13 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 	//console.log('Parsed req : ' + JSON.stringify(req));
 	//console.log('Verfying signature');
 	var signedBlob = appendHostAndPathFromReq(reqBlob, httpReq);
-	if (req.keyType == 'ed25519'){
+	/*if (req.keyType == 'ed25519'){
 		console.log('reqBlob\n' + (new Buffer(reqBlob, 'base64')).toString('hex'));
 		console.log('signedBlob\n' + signedBlob.toString('hex'));
-	}
+	}*/
+	console.log('reqBlob\n' + (new Buffer(reqBlob, 'base64')).toString('hex'));
+	console.log('signedBlob\n' + signedBlob.toString('hex'));
+	//console.log('signature\n' + signature);
 	if (!signedBlob){
 		console.log('Error: can\'t get the blob of which we have to check the authenticity');
 		console.log('reqBlob:\n' + JSON.stringify(reqBlob));
@@ -289,20 +292,17 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 	}
 	if (req.keyType == 'ecdsa'){
 		if (req.curveName.indexOf('secp') > -1){ //Checking is the curve is a prime field one
-			cryptopp.ecdsa.prime.verify(signedBlob.toString('hex'), signature, req.point, req.curveName, 'sha1', function(isValid){
-				callback(isValid);
-			});
+			var isValid = cryptopp.ecdsa.prime.verify(signedBlob.toString('hex'), (new Buffer(signature, 'base64')).toString('hex'), req.point, req.curveName, 'sha1');
+			callback(isValid);
 		} else if (req.curveName.indexOf('sect') > -1){ //Binary curves aren't supported in ECDSA on binary fields in the node-cryptopp binding lib v0.1.2
 			throw new TypeError("Unsupported curve type. See cryptopp README page");
 		} else throw new TypeError("Unknown curve type");
 	} else if (req.keyType == 'rsa'){
-		cryptopp.rsa.verify(signedBlob.toString('hex'), signature, req.modulus, req.publicExponent, undefined, function(isValid){
-			callback(isValid);
-		});
+		var isValid = cryptopp.rsa.verify(signedBlob.toString('hex'), (new Buffer(signature, 'base64')).toString('hex'), req.modulus, req.publicExponent, undefined);
+		callback(isValid);
 	} else if (req.keyType == 'dsa'){
-		cryptopp.dsa.verify(signedBlob.toString('hex'), signature, req.primeField, req.divider, req.base, req.publicElement, function(isValid){
-			callback(isValid);
-		});
+		var isValid = cryptopp.dsa.verify(signedBlob.toString('hex'), (new Buffer(signature, 'base64')).toString('hex'), req.primeField, req.divider, req.base, req.publicElement);
+		callback(isValid)
 	} else if (req.keyType == 'ed25519'){
 		var isValid = sodium.api.crypto_sign_verify_detached(new Buffer(signature, 'base64'), signedBlob, new Buffer(req.publicKey, 'hex'));
 		callback(isValid);
@@ -313,7 +313,7 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 	} else throw new TypeError("Unknown key type");
 };
 
-//This method is not used anywhere...
+//External / out-of-context signature validation
 var verifySignature = function(reqBlob, signature, reqUrl, method, callback){
 	if (typeof reqBlob != 'string') throw new TypeError('reqBlob must be a base64 string');
 	if (!(Buffer.isBuffer(signature) || typeof signature == 'string')) throw new TypeError('signature must either be a buffer or a string');
@@ -1075,7 +1075,7 @@ function buildPayload(keyRing, username, actionType, hostnameAndPath, verb, call
 		var keyType = pubKey.keyType;
 		if (keyType == 'rsa' || keyType == 'dsa' || keyType == 'ecdsa'){
 			keyRing.sign(signedMessage.toString('utf8'), 'base64', undefined, function(signature){
-				callback(reqEncoded, signature); //node-cryptopp returns the signatures already hex-encoded
+				callback(reqEncoded, signature); //node-cryptopp returns the signatures already base64-encoded
 			});
 		} else if (keyType == 'ed25519'){
 			keyRing.sign(signedMessage, function(signature){
