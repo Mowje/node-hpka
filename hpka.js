@@ -24,7 +24,7 @@ var fs = require('fs');
 var Buffer = require('buffer').Buffer;
 var http = require('http');
 var https = require('https');
-var url = require('url');
+var url = require('fast-url-parser');
 
 exports.supportedAlgorithms = function(){
 	var algos = [];
@@ -268,8 +268,8 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 		console.log('reqBlob\n' + (new Buffer(reqBlob, 'base64')).toString('hex'));
 		console.log('signedBlob\n' + signedBlob.toString('hex'));
 	}*/
-	console.log('reqBlob\n' + (new Buffer(reqBlob, 'base64')).toString('hex'));
-	console.log('signedBlob\n' + signedBlob.toString('hex'));
+	//console.log('reqBlob\n' + (new Buffer(reqBlob, 'base64')).toString('hex'));
+	//console.log('signedBlob\n' + signedBlob.toString('hex'));
 	//console.log('signature\n' + signature);
 	if (!signedBlob){
 		console.log('Error: can\'t get the blob of which we have to check the authenticity');
@@ -313,7 +313,7 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 	} else throw new TypeError("Unknown key type");
 };
 
-//External / out-of-context signature validation
+//External / out-of-context signature validation. Note: reqUrl must be a full URL (with protocol and everything)
 var verifySignature = function(reqBlob, signature, reqUrl, method, callback){
 	if (typeof reqBlob != 'string') throw new TypeError('reqBlob must be a base64 string');
 	if (!(Buffer.isBuffer(signature) || typeof signature == 'string')) throw new TypeError('signature must either be a buffer or a string');
@@ -321,22 +321,17 @@ var verifySignature = function(reqBlob, signature, reqUrl, method, callback){
 	if (typeof method != 'string') throw new TypeError('method must be a string');
 
 	var req = processReqBlob(reqBlob);
-	//var reqVerb = getVerbFromId(method);
 	var reqUrlStr = reqUrl.toString('utf8'); //Start after the first byte (being the verbId);
-	//var reqUrlObj = url.parse(reqUrl);
 	var parsedUrl = url.parse(reqUrlStr);
 	var httpReqMimic = {
 		headers: {
-			host: parsedUrl.hostname || parsedUrl.host,
-			url: parsedUrl.path
+			host: parsedUrl.hostname || parsedUrl.host
 		},
+		url: parsedUrl.path || parsedUrl.pathname,
 		method: method
 	};
-	//console.log('httpReqMimic: ' + JSON.stringify(httpReqMimic));
 	verifySignatureWithoutProcessing(req, reqBlob, httpReqMimic, signature, function(isValid){
 		callback(isValid, req.username, req);
-		//if (isValid) callback(true, req.username, req);
-		//else callback(false);
 	});
 };
 
@@ -1070,7 +1065,7 @@ function buildPayload(keyRing, username, actionType, hostnameAndPath, verb, call
 		req.copy(signedMessage);
 		signedMessage[reqByteLength] = getVerbId(verb);
 		signedMessage.write(hostnameAndPath, reqByteLength + 1);
-		//console.log('Signed payload: ' + signedMessage.toString('utf8'));
+		//console.log('Signed payload:\n' + signedMessage.toString('hex'));
 		var pubKey = keyRing.publicKeyInfo();
 		var keyType = pubKey.keyType;
 		if (keyType == 'rsa' || keyType == 'dsa' || keyType == 'ecdsa'){
