@@ -283,7 +283,7 @@ function testStuff(callback){
 			});
 		});
 	});
-	unauthReq.end(); //Yes, unlike HPKA requests, standard HTTP requests must be `end()`-ed... Sorry if automaitcally `end()`-ing HPKA requests causes you some trouble
+	unauthReq.end(); //Yes, unlike HPKA requests, standard HTTP requests must be `end()`-ed... Sorry if automatically `end()`-ing HPKA requests causes you some trouble
 }
 
 

@@ -729,6 +729,9 @@ exports.client = function(keyFilename, usernameVal, password){
 		if (!(actionType >= 0x00 && actionType <= 0x02)) throw new TypeError('"actionType" parameter must be 0x00 <= actionType <= 0x02 when calling stdReq(). Note that keyRotations have their methods (because they require than a simple HPKA-Req blob and its signature');
 		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
 		if (errorHandler && typeof errorHandler != 'function') throw new TypeError('"errorHandler must be a function"');
+
+		//Cloning the options object, before starting working on it
+		options = clone(options);
 		if (!options.headers) options.headers = {};
 		if (!options.method) options.method = 'get';
 		if (!(options.hostname && options.path)) throw new TypeError('hostname and path options must be specified')
@@ -737,15 +740,26 @@ exports.client = function(keyFilename, usernameVal, password){
 			options.headers['HPKA-Req'] = hpkaReq;
 			options.headers['HPKA-Signature'] = signature;
 			var req;
-			if (body && body instanceof fd){
-				var initialHeaders = options.headers;
-				options.headers = body.getHeaders();
-				var initialHeadersNames = Object.keys(initialHeaders);
-				for (var i = 0; i < initialHeadersNames.length; i++){
-					options.headers[initialHeadersNames[i]] = initialHeaders[initialHeadersNames[i]];
+			//Appending the headers that go with the provided body
+			if (body){
+				if (typeof body == 'object' && !(body instanceof fd || Buffer.isBuffer(body))){
+					body = JSON.stringify(body);
+					options.headers['Content-Type'] = 'application/json';
 				}
-				options.headers['HPKA-Req'] = hpkaReq;
-				options.headers['HPKA-Signature'] = signature;
+				if (Buffer.isBuffer(body)){
+					options.headers['Content-Length'] = body.length.toString();
+				} else if (typeof body == 'string'){
+					options.headers['Content-Length'] = Buffer.byteLength(body).toString();
+				} else if (body instanceof fd){
+					var initialHeaders = options.headers;
+					options.headers = body.getHeaders();
+					var initialHeadersNames = Object.keys(initialHeaders);
+					for (var i = 0; i < initialHeadersNames.length; i++){
+						options.headers[initialHeadersNames[i]] = initialHeaders[initialHeadersNames[i]];
+					}
+					options.headers['HPKA-Req'] = hpkaReq;
+					options.headers['HPKA-Signature'] = signature;
+				}
 			}
 			if (options.protocol && options.protocol == 'https'){
 				options.protocol = null;
@@ -759,6 +773,7 @@ exports.client = function(keyFilename, usernameVal, password){
 				});
 			}
 			if (errorHandler) req.on('error', errorHandler);
+			//Appending the body to the request
 			if (body){
 				if (Buffer.isBuffer(body) || typeof body == 'string'){
 					req.write(body);
@@ -792,6 +807,9 @@ exports.client = function(keyFilename, usernameVal, password){
 		if (!(newKeyPath && typeof newKeyPath == 'string')) throw new TypeError('"newKeyPath" parameter must be a string, a path to the file containing the new key you want to use');
 		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
 		if (errorHandler && typeof errorHandler != 'function') throw new TypeError('when defined, errorHandler must be a function');
+
+		//Cloning the options object, before starting working on it
+		options = clone(options);
 		if (!options.headers) options.headers = {};
 		if (!options.method) options.method = 'get';
 		if (!fs.existsSync(newKeyPath)) throw new TypeError('The key file doesn\'t exist');
@@ -1118,4 +1136,24 @@ function appendHostAndPathFromReq(reqBlob, httpReq, encoding){
 	signedBlob[reqBuffer.length] = getVerbId(httpReq.method);
 	signedBlob.write(hostAndPath, reqBuffer.length + 1);
 	return signedBlob;
+}
+
+function clone(o){
+	var typeO = typeof o;
+	if (typeO == 'object'){
+		if (Array.isArray(o)){
+			var c = [];
+			for (var i = 0; i < o.length; i++) c.push(clone(o[i]));
+			return c;
+		} else if (o instanceof Date){
+			return new Date(o.getTime());
+		} else if (o == null){
+			return null;
+		} else {
+			var props = Object.keys(o);
+			var c = {};
+			for (var i = 0; i < props.length; i++) c[props[i]] = clone(o[props[i]])
+			return c;
+		}
+	} else if (typeO == 'number' || typeO == 'string' || typeO == 'boolean') return o;
 }

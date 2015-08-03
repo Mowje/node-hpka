@@ -84,6 +84,10 @@ function checkPubKeyObjects(pubKey1, pubKey2){
 }
 
 var requestHandler = function(req, res){
+	/*if (req.body && Object.keys(req.body).length > 0){
+		console.log('typeof req.body: ' + typeof req.body);
+		console.log('req.body: ' + JSON.stringify(req.body));
+	}*/
 	var headers = {'Content-Type': 'text/plain'};
 	var body;
 	if (req.username){
@@ -124,6 +128,8 @@ var registration = function(HPKAReq, req, res){
 	var username = HPKAReq.username;
 	var keyInfo = getPubKeyObject(HPKAReq);
 	userList[username] = keyInfo;
+	//console.log('typeof req.body: ' + typeof req.body);
+	//console.log('req.body: ' + JSON.stringify(req.body));
 	var body = 'Welcome ' + username + ' !';
 	res.writeHead(200, {'Content-Type': 'text/plain', 'Content-Length': body.length});
 	res.write(body);
@@ -215,12 +221,13 @@ function testStuff(callback){
 		res.on('data', function(data){
 			assert.equal(data, 'Anonymous user', 'Unexpected string from server : ' + data);
 			//Signing up
+			var reqPayload = {test: {test2: 'test3'}};
 			client.registerUser(reqOptions, function(res){
 				assert.equal(res.statusCode, 200, 'On successful registration, status code must be 200');
 				res.on('data', function(data){
 					assert.equal(data, 'Welcome ' + testUsername + ' !', 'Unexpected message on registration : ' + data);
 					//Autheticated HTTP request
-					client.request(reqOptions, undefined, function(res2){
+					client.request(reqOptions, reqPayload, function(res2){
 						assert.equal(res2.statusCode, 200, 'Successful autheticated request must have status code 200');
 						res2.on('data', function(data){
 							assert.equal(data, 'Authenticated as : ' + testUsername, 'Unexpected message on authenticated request : ' + data);
@@ -271,10 +278,10 @@ function testStuff(callback){
 						});
 					})
 				});
-			});
+			}, function(err){}, reqPayload);
 		});
 	});
-	unauthReq.end(); //Yes, unlike HPKA requests, standard HTTP requests must be `end()`-ed... Sorry if automaitcally `end()`-ing HPKA requests causes you some trouble
+	unauthReq.end(); //Yes, unlike HPKA requests, standard HTTP requests must be `end()`-ed... Sorry if automatically `end()`-ing HPKA requests causes you some trouble
 }
 
 

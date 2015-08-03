@@ -118,14 +118,14 @@ The returned `client` object have the following method(s) :
 * clear() : the clear the internal KeyRing object. This method MUST be called when you finish using the `client` object.
 * request(options, [body], callback, [errorHandler]), send an authenticated HTTP request :
 	* options : the [HTTP](http://nodejs.org/api/http.html)/[HTTPS](http://nodejs.org/api/https.html) options object. Note that if you want to use https, you must set `options.protocol = 'https'`; otherwise, http is used
-	* body : body of the request. Optional. Either a buffer or a string or a [FormData](https://github.com/felixge/node-form-data) object
+	* body : body of the request. Optional. Either a buffer or a string or a [FormData](https://github.com/felixge/node-form-data) object or a standard JS object. (See note below)
 	* callback : method that will be called once the request is sent. The callback will have the [response](http://nodejs.org/api/http.html#http_http_incomingmessage) object as unique parameter
 	* errorHandler : optional error handler function
 * registerUser(options, callback, [errorHandler], [body]), register the user on the server :
 	* options : the [HTTP](http://nodejs.org/api/http.html)/[HTTPS](http://nodejs.org/api/https.html) options object. Note that if you want to use https, you must set `options.protocol = 'https'`; otherwise, http is used
 	* callback : method that will be called once the request is sent. The callback will have the [response](http://nodejs.org/api/http.html#http_http_incomingmessage) object as unique parameter
 	* errorHandler : optional error handler function
-	* body : body of the request. Optional. Either a buffer or a string or a [FormData](https://github.com/felixge/node-form-data) object
+	* body : body of the request. Optional. Either a buffer or a string or a [FormData](https://github.com/felixge/node-form-data) object or a standard JS object. (See note below)
 * deleteUser(options, callback, [errorHandler]), delete the user's account :
 	* options : the [HTTP](http://nodejs.org/api/http.html)/[HTTPS](http://nodejs.org/api/https.html) options object. Note that if you want to use https, you must set `options.protocol = 'https'`; otherwise, http is used
 	* callback : method that will be called once the request is sent. The callback will have the [response](http://nodejs.org/api/http.html#http_http_incomingmessage) object as unique parameter
@@ -135,11 +135,14 @@ The returned `client` object have the following method(s) :
 	* newKeyPath : path where the new key file is stored. That file could either be created with `hpka.createClientKey()` or [cryptopp.KeyRing](https://github.com/Mowje/node-cryptopp#keyring).
 	* callback : method that will be called once the request is sent. The callback will have the [response](http://nodejs.org/api/http.html#http_http_incomingmessage) object as unique parameter
 	* errorHandler : optional error handler function
-	* body : body of the request. Optional. Either a buffer or a string or a [FormData](https://github.com/felixge/node-form-data) object
+	* body : body of the request. Optional. Either a buffer or a string or a [FormData](https://github.com/felixge/node-form-data) object or a standard JS object. (See note below)
 * setHttpMod(httpRef), set the http module you want to use :
 	* httpRef : the http module you want to use, overriding the [default one](http://nodejs.org/api/http.html). To go back to the default module, call the method again with no parameter. Example use case : using HPKA with Tor, as explained below.
 * setHttpsMod(httpsRef), set the https module you want to use :
 	* httpsRef : the https module you want to use, overriding the [default one](https://nodejs.org/api/https.html). To go back to the default module, call the method again with no parameter. Example use case : using HPKA with Tor, as explained below.
+
+__NOTE on request bodies:__
+If the provided request body is a FormData or a standard JS/JSON object, the `Content-Type` and `Content-Length` headers are set automatically. Otherwise, only the `Content-Length` header is set automatically; `Content-Type` must still be set manually.
 
 `hpka.createClientKey(keyType, options, filename, password, doNotReturn)`: creates a new keypair file. Returns the underlying KeyRing object when finished
 * keyType : must be either 'ecdsa', 'rsa', 'dsa' or 'ed25519'
