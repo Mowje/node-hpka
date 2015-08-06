@@ -144,6 +144,9 @@ The returned `client` object have the following method(s) :
 __NOTE on request bodies:__
 If the provided request body is a FormData or a standard JS/JSON object, the `Content-Type` and `Content-Length` headers are set automatically. Otherwise, only the `Content-Length` header is set automatically; `Content-Type` must still be set manually.
 
+__NOTE on host value:__
+The signature takes the "Host" http header into account. Hence, if you to force a "Host" value when making an HPKA request, set `options.headers.host` with value before making the request.
+
 `hpka.createClientKey(keyType, options, filename, password, doNotReturn)`: creates a new keypair file. Returns the underlying KeyRing object when finished
 * keyType : must be either 'ecdsa', 'rsa', 'dsa' or 'ed25519'
 * options : the curve name for ecdsa, the key size for RSA and RSA.

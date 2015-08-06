@@ -735,7 +735,9 @@ exports.client = function(keyFilename, usernameVal, password){
 		if (!options.headers) options.headers = {};
 		if (!options.method) options.method = 'get';
 		if (!(options.hostname && options.path)) throw new TypeError('hostname and path options must be specified')
-		var hostnameAndPath = options.hostname + options.path;
+		var hostname = options.headers['Host'] || options.headers['host'] || options.host || options.hostname;
+		hostname = hostname.replace(/:\d+/, '');
+		var hostnameAndPath = hostname + options.path;
 		buildPayload(keyRing, username, actionType, hostnameAndPath, options.method, function(hpkaReq, signature){
 			options.headers['HPKA-Req'] = hpkaReq;
 			options.headers['HPKA-Signature'] = signature;
