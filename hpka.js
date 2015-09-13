@@ -168,7 +168,8 @@ var processReqBlob = function(pubKeyBlob){
 	actualTimestamp = Math.floor(actualTimestamp / 1000);
 	//console.log('Actual timestamp : ' + actualTimestamp);
 	//console.log('Req timestamp : ' + timeStamp);
-	if (actualTimestamp > timeStamp + 120 || actualTimestamp < timeStamp - 30) throw new TypeError("Request is too old or ahead of time");
+	if (actualTimestamp >= timeStamp + 120) throw new TypeError("Request is too old");
+	//if ((actualTimestamp > timeStamp + 120) || (actualTimestamp < timeStamp - 30)) throw new TypeError("Request is too old or ahead of time");
 	//Reading the username length
 	var usernameLength = buf[byteIndex];
 	byteIndex++;
