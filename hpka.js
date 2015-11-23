@@ -156,11 +156,12 @@ var processReqBlob = function(pubKeyBlob){
 	var versionNumber = buf[byteIndex];
 	byteIndex++;
 	//Reading the timestamp
-	var timeStamp = buf.readInt32BE(byteIndex);
-	timeStamp = timeStamp << 32;
+	var timestampLeft, timestampRight;
+	timeStampLeft = buf.readUInt32BE(byteIndex);
 	byteIndex += 4;
-	timeStamp += buf.readInt32BE(byteIndex);
+	timeStampRight = buf.readUInt32BE(byteIndex);
 	byteIndex += 4;
+	var timeStamp = joinUInt(timeStampLeft, timeStampRight);
 	//timeStamp *= 1000;
 	//Checking that the signature isn't older than 120 seconds
 	var actualTimestamp = Date.now();
@@ -989,9 +990,10 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback, e
 	//Writing the timestamp
 	var timestamp = Math.floor(Number(Date.now()) / 1000);
 	//console.log('Timestamp at buildPayload : ' + timestamp);
-	buffer.writeInt32BE(timestamp >> 31, offset);
+	var timestampParts = splitUInt(timestamp);
+	buffer.writeUInt32BE(timestampParts.left, offset);
 	offset += 4;
-	buffer.writeInt32BE(timestamp, offset, true);
+	buffer.writeUInt32BE(timestampParts.right, offset);
 	offset += 4;
 	//Writing the username length, then the username itself
 	buffer.writeUInt8(username.length, offset);
@@ -1119,6 +1121,26 @@ function getBase64ByteLength(base64){
 	if (base64.indexOf('=') > -1) missingBytes = 1;
 	if (base64.indexOf('==') > -1) missingBytes = 2;
 	return 3 * (base64.length / 4) - missingBytes;
+}
+
+var TwoPower16 = 1 << 16;
+var TwoPower32 = TwoPower16 * TwoPower16;
+
+function splitUInt(n){ //Split a 53 bit integer into left and right parts
+	if (!(typeof n == 'number' && Math.floor(n) == n && n >= 0)) throw new TypeError('n must positive integer number');
+	var l, r;
+	r = n % TwoPower32;
+	l = n - r;
+	return {left: l, right: r};
+}
+
+function joinUInt(left, right){
+	if (!(typeof left == 'number' && Math.floor(left) == left && left >= 0 && left < TwoPower32)) throw new TypeError('left must be a positive integer with a range of 0 and 2^32-1');
+	if (!(typeof right == 'number' && Math.floor(right) == right && right >= 0 && right < TwoPower32)) throw new TypeError('right must be a positive integer with a range of 0 and 2^32-1');
+	var n = 0;
+	n += right;
+	n += left * TwoPower32;
+	return n;
 }
 
 function appendHostAndPathFromReq(reqBlob, httpReq, encoding){
