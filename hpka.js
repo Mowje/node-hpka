@@ -321,6 +321,8 @@ function processSessionBlob(sessionBlob){
 	timestampRight = sessionBuf.readUInt32BE(byteIndex);
 	byteIndex += 4;
 	var timestamp = joinUInt(timestampLeft, timestampRight);
+	var currentTimestamp = Math.floor(Date.now() / 1000);
+	if (currentTimestamp >= timestamp + 120) throw new RangeError('Request is too old');
 	//Reading sessionId length
 	var sessionIdLength = sessionBuf[byteIndex];
 	byteIndex++;
