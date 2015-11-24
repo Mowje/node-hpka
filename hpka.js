@@ -149,6 +149,7 @@ var getVerbFromId = function(verbID){
 */
 
 //Extracting all request details from the blob. Cf HPKA spec
+//Note about buffers, indexes, and lack of checks :
 var processReqBlob = function(pubKeyBlob){
 	var buf = new Buffer(pubKeyBlob, 'base64');
 	var byteIndex = 0;
@@ -169,7 +170,7 @@ var processReqBlob = function(pubKeyBlob){
 	actualTimestamp = Math.floor(actualTimestamp / 1000);
 	//console.log('Actual timestamp : ' + actualTimestamp);
 	//console.log('Req timestamp : ' + timeStamp);
-	if (actualTimestamp >= timeStamp + 120) throw new TypeError("Request is too old");
+	if (actualTimestamp >= timeStamp + 120) throw new RangeError("Request is too old");
 	//if ((actualTimestamp > timeStamp + 120) || (actualTimestamp < timeStamp - 30)) throw new TypeError("Request is too old or ahead of time");
 	//Reading the username length
 	var usernameLength = buf[byteIndex];
@@ -180,6 +181,9 @@ var processReqBlob = function(pubKeyBlob){
 	//Reading the action type
 	var actionType = buf[byteIndex];
 	byteIndex++;
+	if (!(actionType >= 0x00 && actionType <= 0x05)){
+		throw new RangeError('invalid actionType');
+	}
 	//Reading the key type
 	var keyType = buf[byteIndex];
 	byteIndex++;
@@ -202,8 +206,11 @@ var processReqBlob = function(pubKeyBlob){
 		byteIndex += publicPtYLength;
 		//Reading the curveID
 		var curveId = buf.readUInt8(byteIndex);
+		byteIndex++;
+
 		//Building public key object
 		var curveName = getCurveName(curveId);
+
 		req.keyType = 'ecdsa';
 		req.curveName = curveName;
 		req.point = {};
@@ -219,6 +226,7 @@ var processReqBlob = function(pubKeyBlob){
 		byteIndex += 2;
 		var publicExponent = buf.toString('hex', byteIndex, byteIndex + publicExpLength);
 		byteIndex += publicExpLength;
+
 		req.publicExponent = publicExponent;
 		req.modulus = modulus;
 	} else if (keyType == 4){ //DSA case
@@ -238,6 +246,7 @@ var processReqBlob = function(pubKeyBlob){
 		var publicElementLength = buf.readUInt16BE(byteIndex);
 		byteIndex += 2;
 		var publicElement = buf.toString('hex', byteIndex, byteIndex + publicElementLength);
+		byteIndex += publicElementLength;
 
 		req.primeField = primeField;
 		req.divider = divider;
@@ -248,11 +257,79 @@ var processReqBlob = function(pubKeyBlob){
 		var publicKeyLength = buf.readUInt16BE(byteIndex);
 		byteIndex += 2;
 		var publicKey = buf.toString('hex', byteIndex, byteIndex + publicKeyLength);
+		byteIndex += publicKeyLength;
 
 		req.publicKey = publicKey;
 	} else throw new TypeError('Unknown key type');
+	if (actionType == 0x04 || actionType == 0x05){ //Session-id agreement or revocation
+		var sessionIdLength, sessionId;
+		//Reading the sessionId's length
+		sessionIdLength = buf[byteIndex];
+		byteIndex++;
+		//Reading the sessionId
+		sessionId = buf.toString('utf8', byteIndex, byteIndex + sessionIdLength);
+		byteIndex += sessionIdLength;
+
+		req.sessionId = sessionId;
+
+		if (actionType == 0x04){
+			//Calc remaining bytes
+			var rem = remainingBytes();
+			if (rem != 8) return req;
+			//Extract timestamp
+			var expLeft = buf.readUInt32BE(byteIndex);
+			byteIndex += 4;
+			var expRight = buf.readUInt32BE(byteIndex);
+			byteIndex += 4;
+			//Check that it's in the future
+			var expirationTimestamp = joinUInt(expLeft, expRight);
+			if (expirationTimestamp < Date.now()){
+				throw new RangeError('expiration is already past');
+			}
+			req.sessionExpiration = expirationTimestamp;
+		}
+	}
 	return req;
+
+	function remainingBytes(){
+		return buf.length - byteIndex;
+	}
 };
+
+//If buffer, take it as is. If string, assume it's base64-encoded
+function processSessionBlob(sessionBlob){
+	var sessionBuf;
+	if (Buffer.isBuffer(sessionBlob)) sessionBuf = sessionBlob;
+	else if (typeof sessionBlob == 'string') sessionBuf = new Buffer(sessionBlob, 'base64');
+	else throw new TypeError('invalid type for sessionBlob');
+
+	var byteIndex = 0;
+
+	//Reading the version number
+	var versionNumber = sessionBuf[byteIndex];
+	byteIndex++;
+	//Reading username length
+	var usernameLength = sessionBuf[byteIndex];
+	byteIndex++;
+	//Reading username
+	var username = sessionBuf.toString('utf8', byteIndex, byteIndex + usernameLength);
+	byteIndex += usernameLength;
+	//Reading timestamp
+	var timestampLeft, timestampRight;
+	timestampLeft = sessionBuf.readUInt32BE(byteIndex);
+	byteIndex += 4;
+	timestampRight = sessionBuf.readUInt32BE(byteIndex);
+	byteIndex += 4;
+	var timestamp = joinUInt(timestampLeft, timestampRight);
+	//Reading sessionId length
+	var sessionIdLength = sessionBuf[byteIndex];
+	byteIndex++;
+	//Reading sessionId
+	var sessionId = sessionBuf.toString('utf8', byteIndex, byteIndex + sessionIdLength);
+	byteIndex += sessionIdLength;
+
+	return {username: username, timestamp: timestamp, sessionId: sessionId};
+}
 
 /*
 * req : object containing all the public key information that will be used to verify the signature
@@ -316,13 +393,21 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 };
 
 //External / out-of-context signature validation. Note: reqUrl must be a full URL (with protocol and everything)
+//This function throws an exception if the reqBlob is marlformed, or returns an error as first parameter of the callback
 var verifySignature = function(reqBlob, signature, reqUrl, method, callback){
 	if (typeof reqBlob != 'string') throw new TypeError('reqBlob must be a base64 string');
 	if (!(Buffer.isBuffer(signature) || typeof signature == 'string')) throw new TypeError('signature must either be a buffer or a string');
 	if (typeof reqUrl != 'string') throw new TypeError('reqUrl must be a string');
 	if (typeof method != 'string') throw new TypeError('method must be a string');
 
-	var req = processReqBlob(reqBlob);
+	var req;
+	try {
+		req = processReqBlob(reqBlob);
+	} catch (e){
+		if (!callback) throw e;
+		callback(e);
+		return;
+	}
 	var reqUrlStr = reqUrl.toString('utf8'); //Start after the first byte (being the verbId);
 	var parsedUrl = url.parse(reqUrlStr);
 	var httpReqMimic = {
@@ -333,7 +418,7 @@ var verifySignature = function(reqBlob, signature, reqUrl, method, callback){
 		method: method
 	};
 	verifySignatureWithoutProcessing(req, reqBlob, httpReqMimic, signature, function(isValid){
-		callback(isValid, req.username, req);
+		callback(undefined, isValid, req.username, req);
 	});
 };
 
@@ -447,7 +532,7 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 									//Invalid action types
 									res.set('HPKA-Error', '8');
 									res.send('Unknown action type. What the hell are you doing?');
-									//console.log("Unknown action type : " + HPKAReq.actionTyp );
+									//console.log("Unknown action type : " + HPKAReq.actionType );
 								} else {
 									//Valid action type, but not implemented here yet
 									res.set('HPKA-Error', '7');
@@ -684,6 +769,7 @@ exports.changeClientKeyPassword = function(keyFilename, oldPassword, newPassword
 exports.client = function(keyFilename, usernameVal, password){
 	if (typeof usernameVal != 'string') throw new TypeError('Username must be a string');
 	var keyRing, username;
+	var sessions = {};
 	//keyFilename is either the path to the key file, or the keyring instance
 	if ((cryptopp && keyFilename instanceof cryptopp.KeyRing) || (sodium && keyFilename instanceof sodium.KeyRing)){
 		username = usernameVal;
@@ -725,12 +811,14 @@ exports.client = function(keyFilename, usernameVal, password){
 	var httpRef = http;
 	var httpsRef = https;
 
-	function stdReq(options, body, actionType, callback, errorHandler){
+	function stdReq(options, body, actionType, callback, errorHandler, sessionId, wantedSessionExpiration){
 		if (!(options && typeof options == 'object')) throw new TypeError('"options" parameter must be defined and must be an object, according to the default http(s) node modules & node-hpka documentations');
 		if (!(typeof actionType == 'number')) throw new TypeError('"actionType" parameter must be defined and must be a number');
 		if (!(actionType >= 0x00 && actionType <= 0x02)) throw new TypeError('"actionType" parameter must be 0x00 <= actionType <= 0x02 when calling stdReq(). Note that keyRotations have their methods (because they require than a simple HPKA-Req blob and its signature');
 		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
 		if (errorHandler && typeof errorHandler != 'function') throw new TypeError('"errorHandler must be a function"');
+		if (sessionId && !(typeof sessionId == 'string' && sessionId.length > 0 && sessionId.length < 256)) throw new TypeError('when sessionId is defined, it must be a non-null string, up to 255 bytes long');
+
 
 		//Cloning the options object, before starting working on it
 		options = clone(options);
@@ -795,7 +883,17 @@ exports.client = function(keyFilename, usernameVal, password){
 	}
 
 	this.request = function(options, body, callback, errorHandler){
-		stdReq(options, body, 0x00, callback, errorHandler);
+		if (typeof options != 'object') throw new TypeError('options must be an object');
+
+		var hostname;
+		if (typeof options.headers == 'object') hostname = options.headers['Host'] || options.headers['host']
+		hostname = hostname || options.host || options.hostname;
+
+		if (sessions[hostname]){
+
+		} else {
+			stdReq(options, body, 0x00, callback, errorHandler);
+		}
 	};
 
 	this.registerUser = function(options, callback, errorHandler, body){
@@ -921,6 +1019,14 @@ exports.client = function(keyFilename, usernameVal, password){
 		});
 	};
 
+	this.createSession = function(options, sessionId, wantedSessionExpiration, callback){
+
+	};
+
+	this.revokeSession = function(options, sessionId, callback){
+
+	};
+
 	this.setHttpMod = function(_httpRef){
 		if (_httpRef){
 			httpRef = _httpRef;
@@ -933,6 +1039,11 @@ exports.client = function(keyFilename, usernameVal, password){
 		} else httpsRef = https;
 	};
 
+	this.setSession = function(sessionsHash){
+		if (typeof sessionsHash != 'object') throw new TypeError('sessionsHash must be an object');
+		sessions = sessionsHash;
+	};
+
 	this.clear = function(){
 		keyRing.clear();
 	};
@@ -941,7 +1052,7 @@ exports.client = function(keyFilename, usernameVal, password){
 function buildPayloadWithoutSignature(keyRing, username, actionType, callback, encoding){
 	if (!(keyRing && ((cryptopp && keyRing instanceof cryptopp.KeyRing) || (sodium && keyRing instanceof sodium.KeyRing)))) throw new TypeError('keyRing must defined and an instance of cryptopp.KeyRing or sodium.KeyRing');
 	if (!(username && typeof username == 'string')) throw new TypeError('username must be a string');
-	if (username.length > 255) throw new TypeError('Username must be at most 255 bytes long');
+	if (username.length == 0 || username.length > 255) throw new TypeError('Username must be at least 1 byte long and at most 255 bytes long');
 	if (!(actionType && typeof actionType == 'number')) actionType = 0x00;
 	if (!(actionType >= 0x00 && actionType <= 0x03)) throw new TypeError('Invalid actionType. Must be 0 <= actionType <= 3');
 	if (!(callback && typeof callback == 'function')) throw new TypeError('A "callback" must be given, and it must be a function');
@@ -1105,6 +1216,52 @@ function buildPayload(keyRing, username, actionType, hostnameAndPath, verb, call
 }
 
 exports.buildPayload = buildPayload;
+
+function buildSessionPayload(username, sessionId){
+	if (typeof username == 'string') throw new TypeError('username must be a string');
+	if (username.length == 0 || username.length > 255) throw new TypeError('username must be at least 1 byte long and at most 255 bytes long');
+	if (!(Buffer.isBuffer(sessionId) || typeof sessionId == 'string')) throw new TypeError('sessionId must either be a buffer or a string');
+	if (sessionId.length == 0 || sessionId.length > 255) throw new TypeError('sessionId must be at least 1 byte long and at most 255 bytes long');
+
+	/*
+	* 1 version byte
+	* 1 username length byte
+	* 8 timestamp bytes
+	* 1 sessionId length byte
+	*/
+	var minSize = 11;
+
+	var payloadBuf = new Buffer(username.length + sessionId.length + minSize);
+	var byteIndex = 0;
+	//Writing version number
+	payloadBuf[byteIndex] = 0x01;
+	byteIndex++;
+	//Writing username length
+	payloadBuf[byteIndex] = username.length;
+	byteIndex++;
+	//Writing username
+	payloadBuf.write(username, byteIndex);
+	byteIndex += username.length;
+	//Writing timestamp
+	var timestamp = Math.floor(Date.now()/1000);
+	var timestampParts = splitUInt(timestamp);
+	payloadBuf.writeUInt32BE(timestampParts.left, byteIndex);
+	byteIndex += 4;
+	payloadBuf.writeUInt32BE(timestampParts.right, byteIndex);
+	byteIndex += 4;
+	//Writing sessionId length
+	payloadBuf[byteIndex] = sessionId.length;
+	byteIndex++;
+	//Writing sessionId
+	if (Buffer.isBuffer(sessionId)){
+		sessionId.copy(payloadBuf, byteIndex);
+	} else {
+		payloadBuf.write(sessionId, byteIndex);
+	}
+	byteIndex += sessionId.length;
+
+	return payloadBuf.toString('base64');
+}
 
 function parseHostnameAndPath(s){
 	if (!(s && typeof s == 'string')) return false;

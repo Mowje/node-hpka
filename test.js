@@ -112,7 +112,8 @@ var requestHandler = function(req, res){
 		var method = req.method;
 		var reqUrl = 'http://' + (req.headers.hostname || req.headers.host) + req.url
 		//console.log('HpkaReq: ' + hpkaReq + '; HpkaSig: ' + hpkaSig + '; ' + method + '; reqUrl: ' + reqUrl);
-		hpka.verifySignature(hpkaReq, hpkaSig, reqUrl, method, function(isValid, username, hpkaReq){
+		hpka.verifySignature(hpkaReq, hpkaSig, reqUrl, method, function(err, isValid, username, hpkaReq){
+			if (err) console.error('Error in hpkaReq: ' + err);
 			if (!isValid) console.log('External validation failed');
 			//else console.log('External validation success: ' + username + ': ' + JSON.stringify(hpkaReq));
 		});
