@@ -1,0 +1,139 @@
+# CHANGE LOG
+
+## [node-hpka v0.3.12](https://github.com/Mowje/node-hpka/releases/tag/v0.3.12)
+
+24 November 2015
+
+Fixing timestamp encoding issues
+
+## [node-hpka v0.3.11](https://github.com/Mowje/node-hpka/commit/ec018c6b9376ec87703b693dc664c2fba32cb3c3)
+
+13 September 2015
+
+Removing the condition added in v0.3.10. (Sorry)
+
+## [node-hpka v0.3.10](https://github.com/Mowje/node-hpka/commit/2849f95db2703f90893a01e9f3ea10dd9a2d80cf)
+
+13 September 2015
+
+Updating the server code to the latest version of the draft spec. Namely, adding a 30 seconds "ahead of time signature" window.
+
+## [node-hpka v0.3.9](https://github.com/Mowje/node-hpka/commit/4694f3e55717f4f1b2c2845bb6d9c3d8440b6342)
+
+7 August 2015
+
+Fixing a conflict of host vs hostname when making an HPKA-signed request. The bug was triggered when making a request when hostname differs from a user-imposed `Host` header value.
+
+## [node-hpka v0.3.8](https://github.com/Mowje/node-hpka/commit/0e0a6776b665f550734ffb3622df7bfca48a0898)
+
+3 August 2015
+
+Making the usage of request bodies easier. `Content-Length` is automatically set. JS objects can now be passed as bodies in order to make a request with a JSON body (`Content-Type` is set automatically in this case, as it was already the case with a `FormData` object).
+
+## [node-hpka v0.3.7](https://github.com/Mowje/node-hpka/commit/214627f287d6c477096b9c48a16eef56c3469668)
+
+8 December 2014
+
+* Taking HTTP verbs into account, as now described by the current draft of the protocol.
+* Exposing the `verifySignature(Buffer reqBlob, Buffer signature, String reqUrl, String httpVerb, Function callback(isSignatureValid, reqUser, hpkaReq))` method that allow out-of-context authenticators validation
+
+__NOTE:__ Must use same version both on client and server side
+
+## [node-hpka v0.3.6](https://github.com/Mowje/node-hpka/commit/58b782f5e0e17200e4bec87801b2b3a507a6496e)
+
+6 September 2014
+
+Making `req.hpkareq` and `req.username` available to default handlers after a user registration or key rotation where `next()` has been called in the end
+
+## [node-hpka v0.3.5](https://github.com/Mowje/node-hpka/commit/baaf346a74f0fd10fc3234ddb25bd8bfc492cc6b)
+
+4 September 2014
+
+* Fixed a security bug. When using the client, key rotations ignored the `httpMod` and `httpsMod` if you set any (through `setHttpMod` and `setHttpsMod` respectively). Bug introduced since `setHttpMod` and `setHttpsMod` were introduced (v0.1.2)
+* Possibility to pass the request to the default handler, from the registration and key rotation handlers of the middlewares (by calling the `next` parameter function in those handlers).
+* Possibility to send a body with your registration and key rotation client requests.
+
+## [node-hpka v0.3.4](https://github.com/Mowje/node-hpka/commit/3c272cf4899762efe466c8cca5b39677c1fbc300)
+
+3rd September 2014
+
+* Fixed a bug when using forms.
+* Fixed an other bug when using options.headers with forms
+
+## [node-hpka v0.3.3](https://github.com/Mowje/node-hpka/commit/c2019e14165cf8c460fc3b856e277cc929236272)
+
+3rd September 2014
+
+Possibility to use a [FormData](https://github.com/felixge/node-form-data) object as body of a client request.
+
+## [node-hpka v0.3.2](https://github.com/Mowje/node-hpka/commit/f4376f04399f09d5417b8711db0f820792084194)
+
+1st September 2014
+
+Adding an `errorHandler` parameter to hpka client request methods. No API breaks, since those handlers are optional (but kinda necessary to catch http(s) errors)
+
+## [node-hpka v0.3.1](https://github.com/Mowje/node-hpka/commit/6a18fb2013cd61470552ffb88948ab387e8558b8)
+
+29 August 2014
+
+Adding possibility to pass a KeyRing object rather than a path to a keyfile when instanciating an `hpka.client`
+
+## [node-hpka v0.3.0](https://github.com/Mowje/node-hpka/commit/5c2ecf86c58bf6720e99d23d6f80e46ba2532527)
+
+22 August 2014
+
+* Updating internal code to cover updated HPKA spec (including the host+path as part of the signature. base64 encoding for the hpka-req and signature headers. detached ed25519 signatures)
+* Adding `password` parameter to `createClientKey` method, to the `client` constructor and to the `rotateKeys`of the cliet for use with Ed25519 keys
+* Added a `changeClientKeyPassword` method to change the password of Ed25519 key files
+* Added a `doNotReturn` parameter to the `createClientKey` method, so the newly create key can be cleared from memory in case it's not going to be used right away/the return KeyRing object is ignored
+* Added a `clear` method to the `client` object for clearing the key from memory after use of the client
+* No major API changes aside that, since v0.2.3
+
+## [node-hpka v0.2.3](https://github.com/Mowje/node-hpka/commit/e67e03ea4a269788d0efcd78d77976a869ff3278)
+
+20 April 2014
+
+Exposing the `buildPayload` method, for cases where you want to build the HTTP request yourself instead of using the client built into node-hpka and you need to use HPKA.
+
+## [node-hpka v0.2.2](https://github.com/Mowje/node-hpka/commit/1b1ef2a409c92321fbd9cba01256b7fe467ec28b)
+
+13 April 2014
+
+* Explaining how to use [HPKA through Tor](https://github.com/Mowje/node-hpka#using-the-client-with-tor-or-any-socks5-proxy-server)
+* Adding the `setHttpMod` and `setHttpsMod` methods
+
+## [node-hpka v0.2.1](https://github.com/Mowje/node-hpka/commit/03f8e34fb2750b858453c731347fd5493cbbb89f)
+
+31 March 2014
+
+* [node-cryptopp](https://github.com/Mowje/node-cryptopp) and [node-sodium](https://github.com/Mowje/node-sodium) are not mandatory dependencies anymore
+* Adding errorCodes and timestamps in HPKA-Req objects
+
+## [node-hpka v0.2.0](https://github.com/Mowje/node-hpka/commit/688e7c5baf7395592bd43b60fb8b81b127b0fd5c)
+
+29 March 2014
+
+* Sodium and Cryptopp are not mandatory dependencies anymore
+* Passing "request" objects to HPKA handlers
+* Better testing
+
+## [node-hpka v0.1.2](https://github.com/Mowje/node-hpka/commit/9a224e1c002688c1692bb2cc99d345490712324d)
+
+26 March 2014
+
+* Adding support for [Ed25519](http://ed25519.cr.yp.to/) signatures
+* Better testing
+
+## [node-hpka v0.1.1](https://github.com/Mowje/node-hpka/commit/3ea128e2ef228cc7588b1886ab2fdae7a5fba75d)
+
+24 November 2013
+
+* Full spec [HPKA v0.1](https://github.com/Mowje/hpka)
+* Client object and server middleware for node's default [HTTP](http://nodejs.org/api/http.html) and [HTTPS](http://nodejs.org/api/https.html) stacks.
+
+## [node-hpka v0.1.0](https://github.com/Mowje/node-hpka/commit/e40e45d201a178379471133bdb326e78834f5b93)
+
+23 October 2013
+
+HPKA server module that acts as an expressjs middleware.
+**Supports only authentication and adhoc registration.**
