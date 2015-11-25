@@ -768,7 +768,7 @@ exports.changeClientKeyPassword = function(keyFilename, oldPassword, newPassword
 };
 
 //Client object builder
-exports.client = function(keyFilename, usernameVal, password){
+exports.client = function(keyFilename, usernameVal, password, allowGetSessions){
 	if (typeof usernameVal != 'string') throw new TypeError('Username must be a string');
 	var keyRing, username;
 	var sessions = {};
@@ -819,14 +819,20 @@ exports.client = function(keyFilename, usernameVal, password){
 		if (!(actionType >= 0x00 && actionType <= 0x02)) throw new TypeError('"actionType" parameter must be 0x00 <= actionType <= 0x02 when calling stdReq(). Note that keyRotations have their methods (because they require than a simple HPKA-Req blob and its signature');
 		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
 		if (errorHandler && typeof errorHandler != 'function') throw new TypeError('"errorHandler must be a function"');
+
 		if (sessionId && !(typeof sessionId == 'string' && sessionId.length > 0 && sessionId.length < 256)) throw new TypeError('when sessionId is defined, it must be a non-null string, up to 255 bytes long');
 
+		if (wantedSessionExpiration){
+			if (typeof wantedSessionExpiration != 'number') throw new TypeError('when defined, wantedSessionExpiration must a number');
+			if (Math.floor(wantedSessionExpiration) != wantedSessionExpiration) throw new TypeError('when defined, wantedSessionExpiration must be an integer number');
+			if (!(wantedSessionExpiration == 0 || wantedSessionExpiration > Math.floor(Date.now() / 1000))) throw new TypeError('when defined, wantedSessionExpiration must be either equal to zero must be UTC Unix Epoch (in seconds) that is not yet past');
+		}
 
 		//Cloning the options object, before starting working on it
 		options = clone(options);
 		if (!options.headers) options.headers = {};
 		if (!options.method) options.method = 'get';
-		if (!(options.hostname && options.path)) throw new TypeError('hostname and path options must be specified')
+		if (!(options.hostname && options.path)) throw new TypeError('hostname and path options must be specified');
 		var hostname = options.headers['Host'] || options.headers['host'] || options.host || options.hostname;
 		hostname = hostname.replace(/:\d+/, '');
 		var hostnameAndPath = hostname + options.path;
@@ -857,14 +863,10 @@ exports.client = function(keyFilename, usernameVal, password){
 			}
 			if (options.protocol && options.protocol == 'https'){
 				options.protocol = null;
-				req = httpsRef.request(options, function(res){
-					if (callback) callback(res);
-				})
+				req = httpsRef.request(options, callback);
 			} else {
 				options.protocol = null;
-				req = httpRef.request(options, function(res){
-					if (callback) callback(res);
-				});
+				req = httpRef.request(options, callback);
 			}
 			if (errorHandler) req.on('error', errorHandler);
 			//Appending the body to the request
@@ -884,6 +886,68 @@ exports.client = function(keyFilename, usernameVal, password){
 		});
 	}
 
+	function stdSessionReq(options, body, callback, errorHandler, sessionId){
+		if (!(options && typeof options == 'object')) throw new TypeError('"options" parameter must be defined and must be an object, according to the default http(s) node modules & node-hpka documentations');
+		if (!(callback && typeof callback == 'function')) throw new TypeError('callback must be a function');
+		if (errorHandler && typeof errorHandler != 'function') throw new TypeError('when defined, errorHandler must be a function');
+
+		options = clone(options);
+		if (!options.headers) options.headers = {};
+		if (!options.method) options.method = 'get';
+		if (!(options.hostname && options.path)) throw new TypeError('hostname and path must be specified');
+
+		var sessionPayload = buildSessionPayload(username, sessionId);
+
+		//Appending the session header
+		options.headers['HPKA-Session'] = sessionPayload;
+
+		//Appending the headers that go with the provided body
+		if (body){
+			if (typeof body == 'object' && !(body instanceof fd || Buffer.isBuffer(body))){
+				body = JSON.stringify(body);
+				options.headers['Content-Type'] = 'application/json';
+			}
+			if (Buffer.isBuffer(body)){
+				options.headers['Content-Length'] = body.length.toString();
+			} else if (typeof body == 'string'){
+				options.headers['Content-Length'] = Buffer.byteLength(body);
+			} else if (body instanceof fd){
+				var initialHeaders = options.headers;
+				options.headers = body.getHeaders(); //Using form headers as base
+				var initialHeadersNames = Object.keys(initialHeaders);
+				for (var i = 0; i < initialHeadersNames.length; i++){ //Re-applying the user-provided headers
+					options.headers[initialHeadersNames[i]] = initialHeaders[initialHeadersNames[i]];
+				}
+				options.headers['HPKA-Session'] = sessionPayload;
+			}
+		}
+
+		var req;
+		if (options.protocol && options.protocol == 'https'){
+			options.protocol = null;
+			req = httpsRef.request(options, callback);
+		} else {
+			options.protocol = null;
+			req = httpRef.request(options, callback);
+		}
+
+		if (errorHandler) req.on('error', errorHandler);
+		//Appending the body to the request
+		if (body){
+			if (Buffer.isBuffer(body) || typeof body == 'string'){
+				req.write(body);
+				req.end();
+			} else if (fd && body instanceof fd){
+				body.pipe(req);
+			} else {
+				var err = new TypeError('invalid request body type');
+				if (errorHandler) errorHandler(err);
+				else throw err;
+				return;
+			}
+		} else req.end(); //No body to append. Send out the request
+	}
+
 	this.request = function(options, body, callback, errorHandler){
 		if (typeof options != 'object') throw new TypeError('options must be an object');
 
@@ -892,7 +956,7 @@ exports.client = function(keyFilename, usernameVal, password){
 		hostname = hostname || options.host || options.hostname;
 
 		if (sessions[hostname]){
-
+			stdSessionReq(options, body, callback, errorHandler, sessions[hostname]);
 		} else {
 			stdReq(options, body, 0x00, callback, errorHandler);
 		}
@@ -1016,48 +1080,121 @@ exports.client = function(keyFilename, usernameVal, password){
 							} else throw new TypeError('unknown body type on key rotation request');
 						} else httpReq.end();
 					});
-				})
+				});
 			});
 		});
 	};
 
-	this.createSession = function(options, sessionId, wantedSessionExpiration, callback){
+	/*
+	* callback receives (res, sessionIdExpiration)
+	*/
+	this.createSession = function(options, sessionId, wantedSessionExpiration, callback, errorHandler){
+		if (typeof callback != 'function') throw new TypeError('callback must be a function');
+		if (errorHandler && typeof errorHandler != 'function') throw new TypeError('when defined, errorHandler must be a function');
 
+		stdReq(options, undefined, 0x04, function(res){
+			//Checking that no hpka error occured
+			if (res.statusCode == 445){
+				var hpkaErrCode = res.headers['hpka-error'];
+				if (errorHandler) errorHandler('HPKA-Error:' + hpkaErrCode);
+				else throw new Error('HPKA-Error:' + hpkaErrCode);
+				return;
+			}
+			//Checking that the server indeed returned a hpka-session-expiration header
+			var sessionIdExpiration = res.headers['hpka-session-expiration'];
+			if (typeof sessionIdExpiration == 'undefined' || sessionIdExpiration == null){
+				var err = 'NOT_ACCEPTED';
+				if (errorHandler) errorHandler(err);
+				else throw new Error(err);
+				return;
+			}
+			//Getting the hostname of the server we connected to
+			var hostname;
+			if (typeof options.headers == 'object') hostname = options.headers['Host'] || options.headers['host']
+			hostname = hostname || options.host || options.hostname;
+
+			//Saving the sessionId in the sessions hash
+			sessions[hostname] = sessionId;
+
+			callback(res, sessionIdExpiration);
+		}, errorHandler, sessionId, wantedSessionExpiration);
 	};
 
-	this.revokeSession = function(options, sessionId, callback){
+	this.revokeSession = function(options, sessionId, callback, errorHandler){
+		if (typeof callback != 'function') throw new TypeError('callback must be a function');
+		if (errorHandler && typeof errorHandler != 'function') throw new TypeError('when defined, errorHandler must be a function');
 
+		stdReq(options, undefined, 0x05, function(res){
+			//Checking that no hpka error occured
+			if (res.statusCode == 445){
+				var hpkaErrCode = res.headers['hpka-error'];
+				if (errorHandler) errorHandler('HPKA-Error:' + hpkaErrCode);
+				else throw new Error('HPKA-Error:' + hpkaErrCode);
+				return;
+			}
+			//Getting the hostname of the server we connected to
+			var hostname;
+			if (typeof options.headers == 'object') hostname = options.headers['Host'] || options.headers['host']
+			hostname = hostname || options.host || options.hostname;
+
+			//Removing the sessionId from the sessions hash
+			delete sessions[hostname];
+
+			callback(res);
+		}, errorHandler, sessionId);
 	};
 
 	this.setHttpMod = function(_httpRef){
-		if (_httpRef){
-			httpRef = _httpRef;
-		} else httpRef = http;
+		if (_httpRef) httpRef = _httpRef;
+		else httpRef = http;
 	};
 
 	this.setHttpsMod = function(_httpsRef){
-		if (_httpsRef){
-			httpsRef = _httpsRef;
-		} else httpsRef = https;
+		if (_httpsRef) httpsRef = _httpsRef;
+		else httpsRef = https;
 	};
 
-	this.setSession = function(sessionsHash){
+	this.setSessions = function(sessionsHash, merge){
 		if (typeof sessionsHash != 'object') throw new TypeError('sessionsHash must be an object');
-		sessions = sessionsHash;
+		if (merge) for (k in sessionsHash) sessions[k] = sessionsHash[k];
+		else sessions = sessionsHash;
+	};
+
+	this.getSessions = function(){
+		if (!allowGetSessions) throw new Error('Retrieving sessionIds is not allowed by this client instance');
+		return clone(sessions);
+	};
+
+	this.getSessionsReference = function(){
+		if (!allowGetSessions) throw new Error('Retrieving sessionIds is not allowed by this client instance');
+		return sessions;
 	};
 
 	this.clear = function(){
+		sessions = {};
 		keyRing.clear();
 	};
 };
 
-function buildPayloadWithoutSignature(keyRing, username, actionType, callback, encoding){
+function buildPayloadWithoutSignature(keyRing, username, actionType, callback, encoding, sessionId, sessionExpiration){
 	if (!(keyRing && ((cryptopp && keyRing instanceof cryptopp.KeyRing) || (sodium && keyRing instanceof sodium.KeyRing)))) throw new TypeError('keyRing must defined and an instance of cryptopp.KeyRing or sodium.KeyRing');
 	if (!(username && typeof username == 'string')) throw new TypeError('username must be a string');
 	if (username.length == 0 || username.length > 255) throw new TypeError('Username must be at least 1 byte long and at most 255 bytes long');
 	if (!(actionType && typeof actionType == 'number')) actionType = 0x00;
-	if (!(actionType >= 0x00 && actionType <= 0x03)) throw new TypeError('Invalid actionType. Must be 0 <= actionType <= 3');
+	if (!(actionType >= 0x00 && actionType <= 0x05)) throw new TypeError('Invalid actionType. Must be 0 <= actionType <= 3');
 	if (!(callback && typeof callback == 'function')) throw new TypeError('A "callback" must be given, and it must be a function');
+
+	if (sessionId && !(typeof sessionId == 'string' && sessionId.length > 0 && sessionId.length < 256)) throw new TypeError('when defined, sessionId must be a non-null string, max 255 bytes long');
+	if (sessionExpiration){
+		if (typeof sessionExpiration != 'number') throw new TypeError('when defined, sessionExpiration must be a number');
+		if (Math.floor(sessionExpiration) == sessionExpiration) throw new TypeError('when defined, sessionExpiration must be an integer number');
+		if (sessionExpiration < 0 || (sessionExpiration > 0 && Math.floor(Date.now()/1000) > sessionExpiration)) throw new TypeError('when defined, sessionExpiration must either be equal to zero or a UTC Unix Epoch (in seconds) that is not yet passed');
+	}
+
+	if (actionType == 0x04 || actionType == 0x05){
+		if (!sessionId) throw new TypeError('when actionType == 0x04 || actionType == 0x05, sessionId must be defined');
+	}
+
 	var pubKey = keyRing.publicKeyInfo();
 	//console.log('Pubkey used for payload : ' + JSON.stringify(pubKey));
 	//Calculating the buffer length depending on key type
@@ -1091,6 +1228,12 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback, e
 	} else if (pubKey.keyType == 'ed25519'){
 		bufferLength += 2; //Public key length field
 		bufferLength += pubKey.publicKey.length / 2; //Actual public key length
+	}
+	if (actionType == 0x04 || actionType == 0x05){
+		//Add sessionId
+		bufferLength += 1 + sessionId.length;
+		//Add wantedSessionExpiration if provided and actionType == 0x04
+		if (actionType == 0x04 && sessionExpiration) bufferLength += 8;
 	}
 	//bufferLength += 10; //The 10 random bytes appended to the end of the payload; augments signature's entropy
 	//Building the payload
@@ -1184,11 +1327,25 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback, e
 		offset += pubKey.publicKey.length / 2;
 	} else throw new TypeError('Unknown key type : ' + pubKey.keyType);
 
+	if (actionType == 0x04 || actionType == 0x05){
+		buffer[offset] = sessionId.length;
+		offset++;
+		buffer.write(sessionId, offset, offset + sessionId.length);
+		offset += sessionId.length;
+		if (actionType == 0x04 && sessionExpiration){
+			var expirationParts = splitUInt(sessionExpiration);
+			buffer.writeUInt32BE(expirationParts.left, offset);
+			offset += 4;
+			buffer.writeUInt32BE(expirationParts.right, offset);
+			offset += 4;
+		}
+	}
+
 	var req = (encoding ? buffer.toString(encoding) : buffer);
 	callback(req);
 }
 
-function buildPayload(keyRing, username, actionType, hostnameAndPath, verb, callback){
+function buildPayload(keyRing, username, actionType, hostnameAndPath, verb, callback, sessionId, sessionExpiration){
 	if (!(hostnameAndPath && typeof hostnameAndPath == 'string' && parseHostnameAndPath(hostnameAndPath))) throw new TypeError('hostnameAndPath must be a valid string with hostname and path of the request concatenated');
 	if (!(typeof verb == 'string' && getVerbId(verb))) throw new TypeError('invalid HTTP verb');
 	if (!(callback && typeof callback == 'function')) throw new TypeError('callback must be a function');
