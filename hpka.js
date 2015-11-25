@@ -20,6 +20,7 @@ try {
 
 if (!(sodium || cryptopp)) throw new TypeError('No sodium or cryptopp modules found. At least one of them must be installed');
 
+var assert = require('assert');
 var fs = require('fs');
 var Buffer = require('buffer').Buffer;
 var http = require('http');
@@ -432,7 +433,10 @@ exports.verifySignature = verifySignature;
 	loginCheck: function(HPKAReq, res, callback(isValid)),
 	registration: function(HPKAReq, res),
 	deletion: function(HPKAReq, res),
-	keyRotation: function(HPKAReq, RotationReq, res)
+	keyRotation: function(HPKAReq, RotationReq, res),
+	strict: boolean,
+	sessionAgreement: function(HPKAReq, req, res, callback(accepted)),
+	sessionRevocation: function(HPKAReq, req, res, callback(revoked))
 }
 */
 exports.expressMiddleware = function(loginCheck, registration, deletion, keyRotation, strict){
@@ -481,17 +485,17 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 									}
 								});
 								return;
-							} else if (HPKAReq.actionType == 1){
+							} else if (HPKAReq.actionType == 0x01){
 								//Registration
 								//console.log('Calling registration handler');
 								req.hpkareq = HPKAReq;
 								req.username = HPKAReq.username;
 								registration(HPKAReq, req, res, next);
 								return;
-							} else if (HPKAReq.actionType == 2){
+							} else if (HPKAReq.actionType == 0x02){
 								//User deletion
 								deletion(HPKAReq, req, res);
-							} else if (HPKAReq.actionType == 3){
+							} else if (HPKAReq.actionType == 0x03){
 								//Key rotation
 								var newKeyBlob = req.get('HPKA-NewKey');
 								var newKeySignature = req.get('HPKA-NewKeySignature');
@@ -527,10 +531,49 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 										res.status(445).set('HPKA-Error', 2);
 										res.send('Signature of new key with actual key is invalid');
 									}
-								})
+								});
+							} else if (HPKAReq.actionType == 0x04){
+								if (!sessionAgreement){
+									res.status(445).set('HPKA-Error', 7);
+									res.send('Session agreement is not supported');
+									return;
+								}
+
+								var sessionId = HPKAReq.sessionId;
+								assert(typeof sessionId == 'string' && sessionId.length > 0, 'SessionId should be defined and non-empty');
+								assert(typeof HPKAReq.sessionExpiration || (typeof HPKAReq.sessionExpiration == 'number' && HPKAReq.sessionExpiration > 0), 'sessionExpiration should either be a undefined or a number');
+								var sessionExpiration = HPKAReq.sessionExpiration || 0;
+
+								sessionAgreement(HPKAReq, req, res, function(accepted){
+									if (accepted){
+										res.set('HPKA-Session-Expiration', sessionExpiration);
+										res.write('Session created');
+									} else {
+										res.status(445).set('HPKA-Error', 15);
+										res.write('Session not accepted');
+									}
+								});
+							} else if (HPKAReq.actionType == 0x05){
+								if (!sessionRevocation){
+									res.set('HPKA-Error', 7);
+									res.send('Session revocation is not supported');
+									return;
+								}
+
+								var sessionId = HPKAReq.sessionId;
+								assert(typeof sessionId == 'string' && sessionId.length > 0, 'SessionId should be defined and non-empty');
+
+								sessionRevocation(HPKAReq, req, res, function(completed){
+									if (completed){
+										res.send('SessionId revoked');
+									} else {
+										res.set('HPKA-Error', 16);
+										res.send('SessionId cannot be revoked');
+									}
+								});
 							} else {
 								res.status(445);
-								if (Number(HPKAReq.actionType) < 0 || Number(HPKAReq.actionType) > 4){
+								if (Number(HPKAReq.actionType) < 0 || Number(HPKAReq.actionType) > 5){
 									//Invalid action types
 									res.set('HPKA-Error', '8');
 									res.send('Unknown action type. What the hell are you doing?');
@@ -575,9 +618,25 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 };
 
 //Standard HTTP middlware builder
-exports.httpMiddleware = function(requestHandler, loginCheck, registration, deletion, keyRotation, strict){
+/* Config object signature
+{
+	loginCheck: function(HPKAReq, req, res, callback(isValid)),
+	registration: function(HPKAReq, req, res),
+	deletion: function(HPKAReq, req, res),
+	keyRotation: function(HPKAReq, RotationReq, req, res),
+	strict: boolean,
+	sessionAgreement: function(HPKAReq, req, res, callback(accepted)),
+	sessionRevocation: function(HPKAReq, req, res, callback(revoked))
+}
+*/
+exports.httpMiddleware = function(requestHandler, loginCheck, registration, deletion, keyRotation, strict, sessionAgreement, sessionRevocation){
 	if (!(typeof requestHandler == 'function' && typeof loginCheck == 'function' && typeof registration == 'function' && typeof deletion == 'function' && typeof keyRotation == 'function')) throw new TypeError('requestHandler, loginCheck, registration, deletion and keyRotation parameters must all be functions');
 	if (!(typeof strict == 'undefined' || typeof strict == 'boolean')) throw new TypeError("When 'strict' is defined, it must be a boolean");
+	if (sessionAgreement){
+		if (typeof sessionAgreement != 'function') throw new TypeError('when sessionAgreement is defined, it must be a function');
+		if (typeof sessionRevocation != 'function') throw new TypeError('when sessionAgreement is defined, sessionRevocation must also be defined and must be a function');
+	}
+
 	function writeErrorRes(res, message, errorCode){
 		res.writeHead(445, {'Content-Type': 'text/plain', 'Content-Length': message.length.toString(), 'HPKA-Error': errorCode.toString()});
 		res.write(message);
@@ -661,9 +720,52 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 									} else {
 										writeErrorRes(res, 'Signature of new key with actual key is invalid', 2);
 									}
-								})
+								});
+							} else if (HPKAReq.actionType == 0x04){
+								if (!sessionAgreement){
+									writeErrorRes(res, 'Session agreement is not supported', 7);
+									return;
+								}
+
+								var sessionId = HPKAReq.sessionId;
+								assert(typeof sessionId == 'string' && sessionId.length > 0, 'SessionId should be defined and non-empty');
+								assert(typeof HPKAReq.sessionExpiration || (typeof HPKAReq.sessionExpiration == 'number' && HPKAReq.sessionExpiration > 0), 'sessionExpiration should either be a undefined or a number');
+								var sessionExpiration = HPKAReq.sessionExpiration || 0;
+
+								sessionAgreement(HPKAReq, req, res, function(accepted){
+									if (accepted){
+										var message = 'Session created'
+										res.writeHead(200, {
+											'Content-Length': message.length,
+											'HPKA-Session-Expiration': sessionExpiration
+										});
+										res.write(message);
+										res.end();
+									} else {
+										writeErrorRes(res, 'Session not accepted', 15);
+									}
+								});
+							} else if (HPKAReq.actionType == 0x05){
+								if (!sessionRevocation){
+									writeErrorRes(res, 'Session revocation is not supported', 7);
+									return;
+								}
+
+								var sessionId = HPKAReq.sessionId;
+								assert(typeof sessionId == 'string' && sessionId.length > 0, 'SessionId should be defined and non-empty');
+
+								sessionRevocation(HPKAReq, req, res, function(completed){
+									if (completed){
+										var message = 'SessionId revoked';
+										res.writeHead(200, {'Content-Length': message.length});
+										res.write(message);
+										res.end();
+									} else {
+										writeErrorRes(res, 'SessionId cannot be revoked', 16);
+									}
+								});
 							} else {
-								if (Number(HPKAReq.actionType) < 0 || Number(HPKAReq.actionType) > 4){
+								if (Number(HPKAReq.actionType) < 0 || Number(HPKAReq.actionType) > 5){
 									//Unknown actionType
 									writeErrorRes(res, 'Invald actionType', 8);
 								} else {
