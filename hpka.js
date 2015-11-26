@@ -478,7 +478,7 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 									} else {
 										if (strict){
 											res.status(445).set('HPKA-Error', '3');
-											res.send('Invalid key or unregistered user');
+											res.send('Invalid key');
 										} else {
 											next();
 										}
@@ -608,6 +608,31 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 				console.log('error : ' + e);
 				next();
 			}
+		} else if (req.get('HPKA-Session')){
+			var sessionBlob = req.get('HPKA-Session');
+			var sessionReq;
+			try {
+				sessionReq = processSessionBlob(sessionBlob);
+			} catch (e){
+				writeErrorRes(res, 'Malformed request', 1);
+				return;
+			}
+
+			sessionCheck(sessionReq, req, res, function(isValid){
+				if (isValid){
+					req.sessionReq = sessionReq;
+					req.username = sessionReq.username;
+					req.sessionId = sessionReq.sessionId;
+					next();
+				} else {
+					if (strict){
+						res.status(445).set('HPKA-Error', 2);
+						res.send('Invalid token');
+					} else {
+						next();
+					}
+				}
+			});
 		} else {
 			//console.log('HPKA headers not found');
 			res.set('HPKA-Available', '1');
@@ -625,16 +650,18 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 	deletion: function(HPKAReq, req, res),
 	keyRotation: function(HPKAReq, RotationReq, req, res),
 	strict: boolean,
+	sessionCheck: function(sessionReq, req, res, callback(isValid)),
 	sessionAgreement: function(HPKAReq, req, res, callback(accepted)),
 	sessionRevocation: function(HPKAReq, req, res, callback(revoked))
 }
 */
-exports.httpMiddleware = function(requestHandler, loginCheck, registration, deletion, keyRotation, strict, sessionAgreement, sessionRevocation){
+exports.httpMiddleware = function(requestHandler, loginCheck, registration, deletion, keyRotation, strict, sessionCheck, sessionAgreement, sessionRevocation){
 	if (!(typeof requestHandler == 'function' && typeof loginCheck == 'function' && typeof registration == 'function' && typeof deletion == 'function' && typeof keyRotation == 'function')) throw new TypeError('requestHandler, loginCheck, registration, deletion and keyRotation parameters must all be functions');
 	if (!(typeof strict == 'undefined' || typeof strict == 'boolean')) throw new TypeError("When 'strict' is defined, it must be a boolean");
-	if (sessionAgreement){
-		if (typeof sessionAgreement != 'function') throw new TypeError('when sessionAgreement is defined, it must be a function');
-		if (typeof sessionRevocation != 'function') throw new TypeError('when sessionAgreement is defined, sessionRevocation must also be defined and must be a function');
+	if (sessionCheck){
+		if (typeof sessionCheck != 'function') throw new TypeError('when sessionCheck is defined, it must be a function');
+		if (typeof sessionAgreement != 'function') throw new TypeError('when sessionCheck is defined, sessionAgreement must also be defined and must be a function');
+		if (typeof sessionRevocation != 'function') throw new TypeError('when sessionCheck is defined, sessionRevocation must also be defined and must be a function');
 	}
 
 	function writeErrorRes(res, message, errorCode){
@@ -677,7 +704,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 										next();
 									} else {
 										if (strict){
-											writeErrorRes(res, 'Invalid key or unregistered user', 3);
+											writeErrorRes(res, 'Invalid key', 3);
 										} else {
 											next();
 										}
@@ -791,6 +818,34 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 			} catch (e){
 				throw e;
 				console.log('error : ' + e);
+				requestHandler(req, res);
+			}
+		} else if (req.headers['hpka-session']){
+			var sessionBlob = req.headers['hpka-session'];
+			var sessionReq;
+			try {
+				sessionReq = processSessionBlob(sessionBlob);
+			} catch (e){
+				writeErrorRes(res, 'Malformed request', 1);
+				return;
+			}
+
+			sessionCheck(sessionReq, req, res, function(isValid){
+				if (isValid){
+					next();
+				} else {
+					if (strict){
+						writeErrorRes(res, 'Invalid token', 2);
+					} else {
+						next();
+					}
+				}
+			});
+
+			function next(){
+				req.sessionRseq = sessionReq;
+				req.username = sessionReq.username;
+				req.sessionId = sessionReq.sessionId;
 				requestHandler(req, res);
 			}
 		} else {
