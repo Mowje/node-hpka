@@ -37,6 +37,7 @@ if (useKeyRing){
 }
 
 var userList = {};
+var sessions = {};
 var testUsername = 'test';
 var testPassword = 'password';
 
@@ -100,6 +101,75 @@ function checkPubKeyObjects(pubKey1, pubKey2){
 	return true;
 }
 
+//Callback(err, body, res)
+function performReq(reqOptions, body, callback){
+	if (typeof reqOptions != 'object') throw new TypeError('reqOptions must be an object');
+	if (body && (Buffer.isBuffer(body) || typeof body == 'string' || typeof body == 'object')) throw new TypeError('when defined, body must either be a buffer or a string');
+	if (typeof callback != 'function') throw new TypeError('callback must be a function');
+
+	if (body){
+		if (!reqOptions.headers) reqOptions.headers = {};
+
+		var bodyLength;
+		//Object to JSON
+		if (typeof body == 'object' && !Buffer.isBuffer(body)){
+			body = JSON.stringify(body);
+			reqOptions.headers['Content-Type'] = 'application/json';
+		}
+		//Calc body length
+		if (Buffer.isBuffer(body)){
+			bodyLength = Buffer.byteLength(body);
+		} else if (typeof body == 'string'){
+			bodyLength = body.length;
+		}
+		reqOptions.headers['Content-Length'] = bodyLength;
+	}
+
+	var req = http.request(reqOptions, function(res){
+		processRes(res, function(resBody){
+			callback(undefined, resBody, res);
+		});
+	});
+
+	req.on('error', callback);
+
+	if (body) req.write(body);
+
+	req.end();
+}
+
+function processRes(res, cb){
+	var b = '';
+	res.setEncoding('utf8');
+	res.on('end', function(){cb(b)});
+	res.on('data', function(part){b += part});
+}
+
+function writeRes(res, body, headers, statusCode){
+	headers = headers || {};
+	var bodyLength;
+
+	if (typeof body == 'object' && !Buffer.isBuffer(body)){
+		body = JSON.stringify(body);
+		headers['Content-Type'] = 'application/json';
+	}
+	if (Buffer.isBuffer(body)){
+		bodyLength = Buffer.byteLength(body);
+	} else { //Assuming string
+		bodyLength = body.length;
+	}
+
+	headers['Content-Length'] = bodyLength;
+
+	res.writeHead(statusCode || 200, headers);
+	res.write(body);
+	res.end();
+}
+
+function writeHpkaErr(res, message, errorCode){
+	writeRes(res, message, {'HPKA-Error': errorCode}, 445);
+}
+
 var requestHandler = function(req, res){
 	var headers = {'Content-Type': 'text/plain'};
 	var body;
@@ -137,33 +207,27 @@ var registration = function(HPKAReq, req, res){
 	var username = HPKAReq.username;
 	var keyInfo = getPubKeyObject(HPKAReq);
 	userList[username] = keyInfo;
-	var body = 'Welcome ' + username + ' !';
-	res.writeHead(200, {'Content-Type': 'text/plain', 'Content-Length': body.length});
-	res.write(body);
-	res.end();
+	writeRes(res, 'Welcome ' + username + ' !', {'Content-Type': 'text/plain'});
 };
 
 var deletion = function(HPKAReq, req, res){
 	if (typeof userList[HPKAReq.username] != 'object') return;
+	var keyInfo = getPubKeyObject(HPKAReq);
+	if (!checkPubKeyObjects(keyInfo, userList[HPKAReq.username])){
+		writeHpkaErr(res, 'Invalid public key', 3);
+		return;
+	}
 	userList[HPKAReq.username] = undefined;
-	var headers = {'Content-Type': 'text/plain'};
-	var body = HPKAReq.username + ' has been deleted!';
-	headers['Content-Length'] = body.length;
-	res.writeHead(200, headers);
-	res.write(body);
-	res.end();
-
+	writeRes(res, HPKAReq.username  + ' has been deleted!', {'Content-Type': 'text/plain'});
 };
 
 var keyRotation = function(HPKAReq, newKeyReq, req, res){
 	var headers = {'Content-Type': 'text/plain'};
 	var body;
-	var errorCode;
+	var statusCode;
 	//Check that the username exists
 	if (typeof userList[HPKAReq.username] != 'object'){
-		body = 'Unregistered user';
-		errorCode = 445;
-		headers['HPKA-Error'] = 4;
+		writeHpkaErr(res, 'Unregistered user', 4);
 	} else {
 		//Check that the actual key is correct
 		if (checkPubKeyObjects(userList[HPKAReq.username], getPubKeyObject(HPKAReq))){
@@ -172,14 +236,23 @@ var keyRotation = function(HPKAReq, newKeyReq, req, res){
 			body = 'Keys have been rotated!';
 		} else {
 			body = 'Invalid public key'
-			errorCode = 445;
+			statusCode = 445;
 			headers['HPKA-Error'] = 3;
 		}
 	}
-	headers['Content-Length'] = body.length;
-	res.writeHead(errorCode || 200, headers);
-	res.write(body);
-	res.end();
+	writeRes(res, body, {'Content-Type': 'text/plain'}, statusCode);
+};
+
+var sessionAgreement = function(HPKAReq, req, res, callback){
+	var username = HPKAReq.username;
+	var keyInfo = getPubKeyObject(HPKAReq);
+	//Check keys
+	//Accept sessionId
+};
+
+var sessionRevocation = function(HPKAReq, req, res, callback){
+	//Checks keys
+	//Revoke sessionId
 };
 
 //console.log('Starting the server');
