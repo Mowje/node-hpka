@@ -516,8 +516,6 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, req, HPKASignature, function(isValid){
 						if (isValid){
 							function next(){
-								req.hpkareq = HPKAReq;
-								req.username = HPKAReq.username;
 								requestHandler(req, res);
 							}
 
