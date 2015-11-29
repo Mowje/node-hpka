@@ -435,8 +435,8 @@ exports.verifySignature = verifySignature;
 	deletion: function(HPKAReq, res),
 	keyRotation: function(HPKAReq, RotationReq, res),
 	strict: boolean,
-	sessionAgreement: function(HPKAReq, req, res, callback(accepted)),
-	sessionRevocation: function(HPKAReq, req, res, callback(revoked))
+	sessionAgreement: function(HPKAReq, req, callback(accepted)),
+	sessionRevocation: function(HPKAReq, req, callback(revoked))
 }
 */
 exports.expressMiddleware = function(loginCheck, registration, deletion, keyRotation, strict){
@@ -544,7 +544,7 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 								assert(typeof HPKAReq.sessionExpiration || (typeof HPKAReq.sessionExpiration == 'number' && HPKAReq.sessionExpiration > 0), 'sessionExpiration should either be a undefined or a number');
 								var sessionExpiration = HPKAReq.sessionExpiration || 0;
 
-								sessionAgreement(HPKAReq, req, res, function(accepted){
+								sessionAgreement(HPKAReq, req, function(accepted){
 									if (accepted){
 										res.set('HPKA-Session-Expiration', sessionExpiration);
 										res.write('Session created');
@@ -563,7 +563,7 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 								var sessionId = HPKAReq.sessionId;
 								assert(typeof sessionId == 'string' && sessionId.length > 0, 'SessionId should be defined and non-empty');
 
-								sessionRevocation(HPKAReq, req, res, function(completed){
+								sessionRevocation(HPKAReq, req, function(completed){
 									if (completed){
 										res.send('SessionId revoked');
 									} else {
@@ -651,8 +651,8 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 	keyRotation: function(HPKAReq, RotationReq, req, res),
 	strict: boolean,
 	sessionCheck: function(sessionReq, req, res, callback(isValid)),
-	sessionAgreement: function(HPKAReq, req, res, callback(accepted)),
-	sessionRevocation: function(HPKAReq, req, res, callback(revoked))
+	sessionAgreement: function(HPKAReq, req, callback(accepted)),
+	sessionRevocation: function(HPKAReq, req, callback(revoked))
 }
 */
 exports.httpMiddleware = function(requestHandler, loginCheck, registration, deletion, keyRotation, strict, sessionCheck, sessionAgreement, sessionRevocation){
@@ -757,7 +757,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 								assert(typeof HPKAReq.sessionExpiration || (typeof HPKAReq.sessionExpiration == 'number' && HPKAReq.sessionExpiration > 0), 'sessionExpiration should either be a undefined or a number');
 								var sessionExpiration = HPKAReq.sessionExpiration || 0;
 
-								sessionAgreement(HPKAReq, req, res, function(accepted){
+								sessionAgreement(HPKAReq, req, function(accepted){
 									if (accepted){
 										var message = 'Session created'
 										res.writeHead(200, {
@@ -779,7 +779,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 								var sessionId = HPKAReq.sessionId;
 								assert(typeof sessionId == 'string' && sessionId.length > 0, 'SessionId should be defined and non-empty');
 
-								sessionRevocation(HPKAReq, req, res, function(completed){
+								sessionRevocation(HPKAReq, req, function(completed){
 									if (completed){
 										var message = 'SessionId revoked';
 										res.writeHead(200, {'Content-Length': message.length});
