@@ -830,6 +830,9 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 
 			sessionCheck(sessionReq, req, res, function(isValid){
 				if (isValid){
+					req.sessionRseq = sessionReq;
+					req.username = sessionReq.username;
+					req.sessionId = sessionReq.sessionId;
 					next();
 				} else {
 					if (strict){
@@ -841,9 +844,6 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 			});
 
 			function next(){
-				req.sessionRseq = sessionReq;
-				req.username = sessionReq.username;
-				req.sessionId = sessionReq.sessionId;
 				requestHandler(req, res);
 			}
 		} else {
