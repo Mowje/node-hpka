@@ -262,7 +262,7 @@ function testStuff(callback){
 															client.request(reqOptions, undefined, function(res6){
 																assert.equal(res6.statusCode, 445, 'Status code must be 445, but it\'s ' + res6.statusCode + ' instead');
 																res6.on('data', function(data){
-																	assert.equal(data, 'Invalid key or unregistered user', 'The user didn\'t seem to be deleted, even a HPKA delete request was sent');
+																	assert.equal(data, 'Invalid key', 'The user didn\'t seem to be deleted, even a HPKA delete request was sent');
 																	//console.log('Received data from server (auth request after user deletion) : ' + data);
 																	if (callback) callback();
 																});
