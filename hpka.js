@@ -1272,7 +1272,7 @@ exports.client = function(keyFilename, usernameVal, password, allowGetSessions){
 			sessions[hostname] = sessionId;
 
 			callback(res, sessionIdExpiration);
-		}, errorHandler, sessionId, wantedSessionExpiration);
+		}, errorHandler, sessionId, wantedSessionExpiration || 0);
 	};
 
 	this.revokeSession = function(options, sessionId, callback, errorHandler){
@@ -1339,7 +1339,7 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback, e
 	if (!(actionType >= 0x00 && actionType <= 0x05)) throw new TypeError('Invalid actionType. Must be 0 <= actionType <= 3');
 	if (!(callback && typeof callback == 'function')) throw new TypeError('A "callback" must be given, and it must be a function');
 
-	if (sessionId && !(typeof sessionId == 'string' && sessionId.length > 0 && sessionId.length < 256)) throw new TypeError('when defined, sessionId must be a non-null string, max 255 bytes long');
+	if (sessionId && !((Buffer.isBuffer(sessionId) || typeof sessionId == 'string') && sessionId.length > 0 && sessionId.length < 256)) throw new TypeError('when defined, sessionId must be a non-null string or buffer, max 255 bytes long');
 	if (sessionExpiration){
 		if (typeof sessionExpiration != 'number') throw new TypeError('when defined, sessionExpiration must be a number');
 		if (Math.floor(sessionExpiration) == sessionExpiration) throw new TypeError('when defined, sessionExpiration must be an integer number');
@@ -1485,7 +1485,11 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback, e
 	if (actionType == 0x04 || actionType == 0x05){
 		buffer[offset] = sessionId.length;
 		offset++;
-		buffer.write(sessionId, offset, offset + sessionId.length);
+		if (Buffer.isBuffer(sessionId)){
+			sessionId.copy(buffer, offset); //Copy the sessionId to the req buffer
+		} else { //The case string-typed sessionId
+			buffer.write(sessionId, offset, offset + sessionId.length);
+		}
 		offset += sessionId.length;
 		if (actionType == 0x04 && sessionExpiration){
 			var expirationParts = splitUInt(sessionExpiration);
