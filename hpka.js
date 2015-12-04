@@ -396,7 +396,7 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 };
 
 //External / out-of-context signature validation. Note: reqUrl must be a full URL (with protocol and everything)
-//This function throws an exception if the reqBlob is marlformed, or returns an error as first parameter of the callback
+//This function throws an exception if the reqBlob is malformed, or returns an error as first parameter of the callback
 var verifySignature = function(reqBlob, signature, reqUrl, method, callback){
 	if (typeof reqBlob != 'string') throw new TypeError('reqBlob must be a base64 string');
 	if (!(Buffer.isBuffer(signature) || typeof signature == 'string')) throw new TypeError('signature must either be a buffer or a string');
