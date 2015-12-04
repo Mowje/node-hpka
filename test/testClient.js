@@ -12,6 +12,7 @@ var FormData = require('form-data');
 //The keyring from node-cryptopp doesn't support yet password protection for key files
 var testUsername = 'test';
 var testPassword = 'password';
+var testSessionId;
 var keyType;
 
 var testClient;
@@ -87,6 +88,15 @@ function validStatusCode(n){
 	if (!v) throw new TypeError('when defined, _expectedStatusCode must be an integer number, with the [100..600[ range');
 }
 
+function validHPKAErrorCode(n){
+	if (!n) return;
+	var nCopy = n;
+	if (typeof v == 'string') n = parseInt(n);
+	if (isNaN(n)) throw new TypeError('Invalid number : ' + nCopy);
+	var v = typeof n == 'number' && Math.floor(n) == n && n > 0 && n <= 16;
+	if (!v) throw new TypeError('Invalid error code : ' + nCopy);
+}
+
 function isString(s){
 	return typeof s == 'string' && s.length > 0;
 }
@@ -109,6 +119,8 @@ exports.setKeyType = function(_keyType){
 	}
 
 	if (!availKeyType) throw new Error(_keyType + ' is not supported (sodium ro cryptopp is missing)');
+
+	keyType = _keyType;
 };
 
 exports.setServerSettings = function(_serverSettings){
@@ -208,17 +220,101 @@ exports.keyRotationReq = function(cb, newKeyPath, _expectedBody, _expectedStatus
 		processRes(res, function(body){
 			assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code on key rotation: ' + res.statusCode);
 			assert.equal(body, expectedBody, 'Unexpected response body on key rotation: ' + body);
+
+			//Rotating key paths as well, once keys have been rotated on the server
+			var tempKeyPath = keyPath;
+			keyPath = newKeyPath;
+			newKeyPath = tempKeyPath;
+
 			cb();
 		});
 	}, function(err){throw err;});
 
 };
 
-exports.spoofedSignatureReq = function(cb){
+/*
+* HPKA authenticated request with spoofed signature
+* Expected body, status code and HPKA error code can be changed
+* HPKA error code check can be dismissed by setting _expectedHPKAError = null
+*/
+exports.spoofedSignatureReq = function(cb, _expectedBody, _expectedStatusCode, _expectedHPKAError){
+	if (typeof cb != 'function') throw new TypeError('cb must be a function');
+
+	if (_expectedBody && !isString(_expectedBody)) throw new TypeError('when defined, _expectedBody must be a non-null string');
+	validStatusCode(_expectedStatusCode);
+	validHPKAErrorCode(_expectedHPKAError);
+
+	var kr; //The keyring of the current user
+	var fullKeyPath = path.join(process.cwd(), keyPath);
+	if (keyType == 'ed25519'){
+		kr = new (require('sodium').KeyRing)();
+		kr.load(keyPath, testPassword);
+	} else {
+		kr = new (require('cryptopp').KeyRing)();
+		kr.load(keyPath);
+	}
+
+	var expectedBody = 'Invalid signature.' || _expectedBody;
+	var expectedStatusCode = 445 || _expectedStatusCode;
+	var expectedHPKAErrValue = _expectedHPKAError == null ? null : ((_expectedHPKAError && _expectedHPKAError.toString()) || '2');
+
+	var hostAndPath = serverSettings.hostname + serverSettings.path;
+
+	hpka.buildPayload(kr, testUsername, 0x00, hostAndPath, serverSettings.method, function(reqStr, sigStr){
+		var reqOptions = {
+			host: serverSettings.host,
+			path: serverSettings.path,
+			method: serverSettings.method,
+			port: serverSettings.port,
+			headers: {
+				'HPKA-Req': reqStr,
+				'HPKA-Signature': crypto.randomBytes(32).toString('base64')
+			}
+		};
+
+		performReq(reqOptions, undefined, function(err, body, res){
+			if (err) throw err;
+
+			assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code for request with spoofed signature: ' + res.statusCode);
+			assert.equal(body, expectedBody, 'Unexpected response for request with spoofed signature: ' + body);
+			if (expectedHPKAErrValue) assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code: ' + expectedHPKAErrValue);
+
+			cb();
+		});
+	});
+};
+
+exports.spoofedHostReq = function(cb, _exp){
+	if (typeof cb != 'function') throw new TypeError('cb must be a function');
+
+	var kr; //The keyring of the current user
+	var fullKeyPath = path.join(process.cwd(), keyPath);
+	if (keyType == 'ed25519'){
+		kr = new (require('sodium').KeyRing)();
+		kr.load(keyPath, testPassword);
+	} else {
+		kr = new (require('cryptopp').KeyRing)();
+		kr.load(keyPath);
+	}
+
+	hpka.buildPayload(kr, testUsername, 0x00, 'badservernameandpath', serverSettings.method, function(reqStr, sigStr){
+
+	});
+}
+
+exports.spoofedUsernameReq = function(withUsername, cb){
+	if (typeof withUsername != 'string') throw new TypeError('withUsername must be a string');
+	if (typeof cb != 'function') throw new TypeError('cb must be a function');
 
 };
 
-exports.spoofedUsernameReq = function(withUsername){
+exports.spoofedSessionReq = function(withUsername, cb){
+	if (typeof withUsername != 'string') throw new TypeError('withUsername must be a string');
+	if (typeof cb != 'function') throw new TypeError('cb must be a function');
+
+};
+
+exports.malformedReq = function(cb, _expectedBody, _expectedStatusCode, _expectedHPKAError){
 
 };
 
@@ -246,6 +342,7 @@ exports.sessionAgreementReq = function(cb, wantedSessionExpiration, _expectedBod
 				assert(currentSessionExpiration == 0, 'Unexpected non-null session expiration: ' + currentSessionExpiration);
 			}
 			assert.equal(body, expectedBody, 'Unexpected response body: ' + body);
+			testSessionId = newSessionId;
 			cb();
 		});
 	}, function(err){throw err;});
@@ -258,17 +355,37 @@ exports.sessionRevocationReq = function(cb, _expectedBody, _expectedStatusCode){
 	if (_expectedBody && !isString(_expectedBody)) throw new TypeError('when defined, _expectedBody must be a non-null string');
 	validStatusCode(_expectedStatusCode);
 
+	var expectedBody = _expectedBody || ('SessionId revoked');
+	var expectedStatusCode = _expectedStatusCode || 200;
+
+	testClient.revokeSession(serverSettings, testSessionId, function(res){
+		processRes(res, function(body){
+			assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code: ' + res.statusCode);
+			assert.equal(body, expectedBody, 'Unexpected response body on session revocation: ' + body);
+		});
+	}, function(err){throw err;});
+
 };
 
+// How to ensure that a SessionReq is used
 exports.sessionAuthenticatedReq = function(cb, _expectedBody, _expectedStatusCode){
 	if (typeof cb != 'function') throw new TypeError('cb must be a function');
 
 	if (_expectedBody && !isString(_expectedBody)) throw new TypeError('when defined, _expectedBody must be a non-null string');
 	validStatusCode(_expectedStatusCode);
 
+	var expectedBody = _expectedBody || ('Authenticated as : ' + testUsername);
+	var expectedStatusCode = _expectedStatusCode || 200;
+
+	// TODO
+	//Build a sessionPayload using hpka
+	//Initiate request with performReq
+
 	testClient.request(serverSettings, function(res){
 		processRes(res, function(body){
-			
+			assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code: ' + expectedStatusCode);
+			assert.equal(body, expectedBody, 'Unexpected response body on Session authenticated request: ' + body);
+			cb();
 		});
 	}, function(err){throw err;});
 };
