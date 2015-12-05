@@ -1581,6 +1581,8 @@ function buildSessionPayload(username, sessionId){
 	return payloadBuf.toString('base64');
 }
 
+exports.buildSessionPayload = buildSessionPayload;
+
 function parseHostnameAndPath(s){
 	if (!(s && typeof s == 'string')) return false;
 	var seperationIndex = s.indexOf('/');
