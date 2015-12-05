@@ -801,7 +801,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 						} else {
 							console.log('Signature is not valid');
 							if (strict){
-								writeErrorRes(res, 'Invalid signature.', 2);
+								writeErrorRes(res, 'Invalid signature', 2);
 							} else {
 								requestHandler(req, res);
 							}
@@ -810,7 +810,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 				} catch (e){
 					throw e;
 					console.log('error : ' + e);
-					writeErrorRes(res, 'Invalid signature.', 2);
+					writeErrorRes(res, 'Invalid signature', 2);
 					return;
 				}
 			} catch (e){

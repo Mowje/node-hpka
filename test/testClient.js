@@ -254,7 +254,7 @@ exports.spoofedSignatureReq = function(cb, _expectedBody, _expectedStatusCode, _
 		kr.load(keyPath);
 	}
 
-	var expectedBody = 'Invalid signature.' || _expectedBody;
+	var expectedBody = 'Invalid signature' || _expectedBody;
 	var expectedStatusCode = 445 || _expectedStatusCode;
 	var expectedHPKAErrValue = _expectedHPKAError == null ? null : ((_expectedHPKAError && _expectedHPKAError.toString()) || '2');
 
@@ -277,15 +277,19 @@ exports.spoofedSignatureReq = function(cb, _expectedBody, _expectedStatusCode, _
 
 			assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code for request with spoofed signature: ' + res.statusCode);
 			assert.equal(body, expectedBody, 'Unexpected response for request with spoofed signature: ' + body);
-			if (expectedHPKAErrValue) assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code: ' + expectedHPKAErrValue);
+			if (expectedHPKAErrValue) assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code; received headers ' + JSON.stringify(res.headers));
 
 			cb();
 		});
 	});
 };
 
-exports.spoofedHostReq = function(cb, _exp){
+exports.spoofedHostReq = function(cb, _expectedBody, _expectedStatusCode, _expectedHPKAError){
 	if (typeof cb != 'function') throw new TypeError('cb must be a function');
+
+	if (_expectedStatusCode && !isString(_expectedBody)) throw new TypeError('when defined, _expectedBody must be a non-null string');
+	validStatusCode(_expectedStatusCode);
+	validHPKAErrorCode(_expectedHPKAError);
 
 	var kr; //The keyring of the current user
 	var fullKeyPath = path.join(process.cwd(), keyPath);
@@ -297,8 +301,31 @@ exports.spoofedHostReq = function(cb, _exp){
 		kr.load(keyPath);
 	}
 
-	hpka.buildPayload(kr, testUsername, 0x00, 'badservernameandpath', serverSettings.method, function(reqStr, sigStr){
+	var expectedBody = _expectedBody || 'Invalid signature';
+	var expectedStatusCode = _expectedStatusCode || 445;
+	var expectedHPKAErrValue = _expectedHPKAError == null ? null : ((_expectedHPKAError && _expectedHPKAError.toString()) || '2');
 
+	hpka.buildPayload(kr, testUsername, 0x00, 'badservernameand/path', serverSettings.method, function(reqStr, sigStr){
+		var reqOptions = {
+			host: serverSettings.host,
+			path: serverSettings.path,
+			method: serverSettings.method,
+			port: serverSettings.port,
+			headers: {
+				'HPKA-Req': reqStr,
+				'HPKA-Signature': sigStr
+			}
+		};
+
+		performReq(reqOptions, undefined, function(err, body, res){
+			if (err) throw err;
+
+			assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code for request with bad hostname&path: ' + res.statusCode);
+			assert.equal(body, expectedBody, 'Unexpected response body for request with bad hostname&path: ' + body);
+			if (expectedHPKAErrValue) assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code; received headers ' + JSON.stringify(res.headers));
+
+			cb();
+		});
 	});
 }
 
@@ -314,7 +341,34 @@ exports.spoofedSessionReq = function(withUsername, cb){
 
 };
 
-exports.malformedReq = function(cb, _expectedBody, _expectedStatusCode, _expectedHPKAError){
+exports.malformedReq = function(cb){
+	if (typeof cb != 'function') throw new TypeError('cb must be a function');
+
+	var expectedBody = 'Malformed HPKA request';
+	var expectedStatusCode = 445;
+	var expectedHPKAErrValue = '1';
+
+	//Generate a random HPKA Req string, between 1 and 256 bytes long, to base64
+	var fakeHPKAReq = crypto.randomBytes(crypto.randomBytes(1)+1).toString('base64');
+	//Generate a random Ed25519 signature string
+	var fakeSig = crypto.randomBytes(32).toString('base64');
+
+	var reqOptions = {
+		host: serverSettings.host,
+		path: serverSettings.path,
+		method: serverSettings.method,
+		port: serverSettings.port,
+		headers {
+			'HPKA-Req': fakeHPKAReq,
+			'HPKA-Signature': fakeSig
+		}
+	};
+
+	performReq(reqOptions, undefined, function(err, body, res){
+		if (err) throw err;
+
+		assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code on malformed request');
+	});
 
 };
 
