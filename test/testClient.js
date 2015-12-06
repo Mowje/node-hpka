@@ -190,7 +190,7 @@ exports.authenticatedReq = function(cb, withForm, strictMode, _expectedBody, _ex
 
 	var expectedHPKAErrValue = '2';
 
-	testClient.request(serverSettings, undefined, function(res){
+	var responseHandler = function(res){
 		processRes(res, function(body){
 			assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code on authenticated request: ' + res.statusCode);
 
@@ -203,7 +203,46 @@ exports.authenticatedReq = function(cb, withForm, strictMode, _expectedBody, _ex
 
 			cb();
 		});
-	}, function(err){throw err;});
+	};
+
+	var errHandler = function(err){throw err;};
+
+	var requestFuncArgs;
+
+	if (withForm){
+		var theForm = new FormData();
+		theForm.append('field-one', 'test');
+		theForm.append('field-two', 'test 2');
+
+		var submitReqOptions = {
+			host: serverSettings.host,
+			port: serverSettings.port,
+			method: 'POST',
+			path: serverSettings.path,
+			headers: {
+				'test': 1
+			}
+		}
+
+		requestFuncArgs = [submitReqOptions, theForm, responseHandler, errHandler];
+	} else requestFuncArgs = [serverSettings, undefined, responseHandler, errHandler];
+
+	testClient.request.apply(testClient, requestFuncArgs);
+
+	/*testClient.request(serverSettings, undefined, function(res){
+		processRes(res, function(body){
+			assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code on authenticated request: ' + res.statusCode);
+
+			if (strictMode){
+				assert.equal(body, expectedBody, 'Unexpected response body in authenticated request (strict-mode): ' + body);
+				if (!_expectedSuccess) assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code: ' + res.headers['hpka-error']);
+			} else {
+				assert.equal(body, expectedBody, 'Unexpected response body in authenticated request (non-strict mode): ' + body);
+			}
+
+			cb();
+		});
+	}, function(err){throw err;});*/
 };
 
 exports.deletionReq = function(cb, _expectedBody, _expectedStatusCode){
