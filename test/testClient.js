@@ -166,19 +166,41 @@ exports.registrationReq = function(cb, _expectedBody, _expectedStatusCode){
 	}, function(err){throw err;});
 };
 
-exports.authenticatedReq = function(cb, withForm, _expectedBody, _expectedStatusCode){
+exports.authenticatedReq = function(cb, withForm, strictMode, _expectedBody, _expectedSuccess){
 	if (typeof cb != 'function') throw new TypeError('cb must be a function');
 
 	if (_expectedBody && !isString(_expectedBody)) throw new TypeError('when defined, _expectedBody must be a non-null string');
 	validStatusCode(_expectedStatusCode);
 
-	var expectedBody = _expectedBody || ('Authenticated as : ' + testUsername);
-	var expectedStatusCode = _expectedStatusCode || 200;
+	var expectedBody = _expectedBody;
+	if (_expectedSuccess){
+		expectedBody = expectedBody || ('Authenticated as : ' + testUsername);
+	} else {
+		if (strictMode){
+			expectedBody = expectedBody || 'Invalid key';
+			//HPKA-Error: 2
+		} else {
+			expectedBody = expectedBody || 'Anonymous user';
+		}
+	}
+
+	var expectedStatusCode;
+	if (strictMode) expectedStatusCode = _expectedSuccess ? 200 : 445;
+	else expectedStatusCode = 200;
+
+	var expectedHPKAErrValue = '2';
 
 	testClient.request(serverSettings, undefined, function(res){
 		processRes(res, function(body){
-			assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code: ' + res.statusCode);
-			assert.equal(body, expectedBody, 'Unexpected body: ' + body);
+			assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code on authenticated request: ' + res.statusCode);
+
+			if (strictMode){
+				assert.equal(body, expectedBody, 'Unexpected response body in authenticated request (strict-mode): ' + body);
+				if (!_expectedSuccess) assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code: ' + res.headers['hpka-error']);
+			} else {
+				assert.equal(body, expectedBody, 'Unexpected response body in authenticated request (non-strict mode): ' + body);
+			}
+
 			cb();
 		});
 	}, function(err){throw err;});
@@ -330,16 +352,79 @@ exports.spoofedHostReq = function(cb, strictMode){
 	});
 }
 
-exports.spoofedUsernameReq = function(withUsername, cb){
+exports.spoofedUsernameReq = function(withUsername, cb, strictMode){
 	if (typeof withUsername != 'string') throw new TypeError('withUsername must be a string');
 	if (typeof cb != 'function') throw new TypeError('cb must be a function');
 
+	var kr; //The keyring of the current user
+	var fullKeyPath = path.join(process.cwd(), keyPath);
+	if (keyType == 'ed25519'){
+		kr = new (require('sodium').KeyRing)();
+		kr.load(keyPath, testPassword);
+	} else {
+		kr = new (require('cryptopp').KeyRing)();
+		kr.load(keyPath);
+	}
+
+	var expectedBody = 'Invalid key';
+	var expectedStatusCode = strictMode ? 445 : 200;
+	var expectedHPKAErrValue = strictMode ? '3' : null;
+
+	var hostAndPath = serverSettings.hostname + serverSettings.path;
+
+	hpka.buildPayload(kr, withUsername, 0x00, hostAndPath, serverSettings.method, function(reqStr, sigStr){
+		var reqOptions = {
+			host: serverSettings.host,
+			path: serverSettings.path,
+			method: serverSettings.method,
+			port: serverSettings.port,
+			headers: {
+				'HPKA-Req': reqStr,
+				'HPKA-Signature': sigStr
+			}
+		};
+
+		performReq(reqOptions, undefined, function(err, body, res){
+			if (err) throw err;
+
+			assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code for request with bad hostname&path: ' + res.statusCode);
+
+			if (strictMode){
+				assert.equal(body, expectedBody, 'Unexpected response body for request with bad hostname&path: ' + body);
+				if (expectedHPKAErrValue) assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code; received headers ' + JSON.stringify(res.headers));
+			} else {
+				assert.notEqual(body, expectedBody, 'Unexpected response body for request with bad hostname&path (non-strict mode) : ' + body);
+			}
+
+			cb();
+		});
+	});
 };
 
 exports.spoofedSessionReq = function(withUsername, cb){
 	if (typeof withUsername != 'string') throw new TypeError('withUsername must be a string');
 	if (typeof cb != 'function') throw new TypeError('cb must be a function');
 
+	var sId = crypto.randomBytes(10);
+	var sessionPayloadStr = hpka.buildSessionPayload(withUsername, sId);
+
+	var expectedBody = 'Invalid'
+
+	var reqOptions = {
+		host: serverSettings.host,
+		port: serverSettings.port,
+		method: serverSettings.method,
+		path: serverSettings.path,
+		headers: {
+			'HPKA-Session': sessionPayloadStr
+		}
+	};
+
+	performReq(reqOptions, undefined, function(err, body, res){
+		if (err) throw err;
+
+
+	});
 };
 
 exports.malformedReq = function(cb, strictMode){
@@ -380,6 +465,108 @@ exports.malformedReq = function(cb, strictMode){
 		cb();
 	});
 
+};
+
+exports.malformedReqNonBase64 = function(cb, strictMode){
+	if (typeof cb != 'function') throw new TypeError('cb must be a function');
+
+	var expectedBody = 'Malformed HPKA request';
+	var expectedStatusCode = strictMode ? 445 : 200;
+	var expectedHPKAErrValue = strictMode ? '1' : null;
+
+	//Generate a random HPKA Req string, between 1 and 256 bytes long, to base64
+	var fakeHPKAReq = crypto.randomBytes(crypto.randomBytes(1)+1).toString('utf8');
+	//Generate a random Ed25519 signature string
+	var fakeSig = crypto.randomBytes(32).toString('utf8');
+
+	var reqOptions = {
+		host: serverSettings.host,
+		path: serverSettings.path,
+		method: serverSettings.method,
+		port: serverSettings.port,
+		headers {
+			'HPKA-Req': fakeHPKAReq,
+			'HPKA-Signature': fakeSig
+		}
+	};
+
+	performReq(reqOptions, undefined, function(err, body, res){
+		if (err) throw err;
+
+		assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code on malformed request');
+
+		if (strictMode){
+			assert.equal(body, expectedBody, 'Unexpected body on malformed request: ' + body);
+			if (expectedHPKAErrValue) assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code on malformed request: ' + res.headers['hpka-error']);
+		} else {
+			assert.notEqual(body, expectedBody, 'Unexpected body on malformed request (non-strict mode): ' + body);
+		}
+
+		cb();
+	});
+
+};
+
+exports.malformedSessionReq = function(cb){
+	if (typeof cb != 'string') throw new TypeError('cb must be a function');
+
+	//Generate 1 to 256 bytes of random data, to base64
+	var sessionStr = crypto.randomBytes(crypto.randomBytes(1) + 1).toString('base64');
+
+	var expectedBody = 'Malformed request';
+	var expectedStatusCode = 445;
+	var expectedHPKAErrValue = '1';
+
+	var reqOptions = {
+		host: serverSettings.host,
+		port: serverSettings.port,
+		method: serverSettings.method,
+		path: serverSettings.path,
+		headers: {
+			'HPKA-Session': sessionStr
+		}
+	}
+
+	performReq(reqOptions, undefined, function(err, body, res){
+		if (err) throw err;
+
+		assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code on malformed session request: ' + res.statusCode);
+		assert.equal(body, expectedBody, 'Unexpected body on malformed session request: ' + body);
+		assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code: ' + res.headers['hpka-error']);
+
+		cb();
+	});
+};
+
+exports.malformedSessionReqNonBase64 = function(cb){
+	if (typeof cb != 'string') throw new TypeError('cb must be a function');
+
+	//Generate 1 to 256 bytes of random data, to base64
+	var sessionStr = crypto.randomBytes(crypto.randomBytes(1) + 1).toString('utf8');
+
+	var expectedBody = 'Malformed request';
+	var expectedStatusCode = 445;
+	var expectedHPKAErrValue = '1';
+
+	var reqOptions = {
+		host: serverSettings.host,
+		port: serverSettings.port,
+		method: serverSettings.method,
+		path: serverSettings.path,
+		headers: {
+			'HPKA-Session': sessionStr
+		}
+	}
+
+	performReq(reqOptions, undefined, function(err, body, res){
+		if (err) throw err;
+
+		assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code on malformed session request: ' + res.statusCode);
+		assert.equal(body, expectedBody, 'Unexpected body on malformed session request: ' + body);
+		assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code: ' + res.headers['hpka-error']);
+
+		cb();
+	});
 };
 
 exports.sessionAgreementReq = function(cb, wantedSessionExpiration, _expectedBody, _expectedStatusCode, _expectedSessionExpiration){
@@ -470,7 +657,7 @@ exports.sessionAuthenticatedReq = function(cb, strictMode, _expectedBody, _expec
 		}
 	};
 
-	performReq(reqOptions, function(err, body, res){
+	performReq(reqOptions, undefined, function(err, body, res){
 		if (err) throw err;
 
 		assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code in session-authenticated request: ' + res.statusCode);
