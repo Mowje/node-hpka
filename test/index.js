@@ -140,7 +140,7 @@ function insertCallbackInArguments(ar, cb){
 	for (var i = 0; i < ar.length; i++){
 		if (ar[i] == '#cbhere#'){
 			ar[i] = cb;
-			break;
+			return;
 		}
 	}
 	throw new Error('#cbhere# cannot be found in array: ' + JSON.stringify(ar));
