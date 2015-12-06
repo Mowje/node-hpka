@@ -297,7 +297,7 @@ exports.start = function(cb){
 
 	server = http.createServer(applicationToUse);
 	server.listen(serverPort, function(){
-		console.log('The test server has been started on port ' + serverPort);
+		//console.log('The test server has been started on port ' + serverPort);
 		if (cb) cb();
 	});
 };
@@ -306,7 +306,7 @@ exports.stop = function(cb){
 	if (cb && typeof cb != 'function') throw new TypeError('when defined, cb must be a function');
 
 	server.close(function(){
-		console.log('The test server has been closed');
+		//console.log('The test server has been closed');
 		server = undefined;
 		if (cb) cb();
 	});

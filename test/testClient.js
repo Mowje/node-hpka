@@ -129,7 +129,10 @@ exports.setServerSettings = function(_serverSettings){
 	serverSettings = _serverSettings;
 };
 
-exports.setup = function(keyPath, altKeyPath, allowGetSessions){
+exports.setup = function(_keyPath, _altKeyPath, allowGetSessions){
+	keyPath = _keyPath || keyPath;
+	altKeyPath = _altKeyPath || altKeyPath;
+
 	hpka.createClientKey(keyType, testKeyOptions[keyType], keyPath, password);
 	if (altKeyPath) hpka.createClientKey(keyPath, testKeyOptions[keyType], altKeyPath, password);
 
