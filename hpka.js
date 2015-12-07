@@ -375,8 +375,18 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 		return;
 	}
 
-	if (!isValidSigLength(signature)){
-		console.log('Invalid signature length detected');
+	var keyType = req.keyType;
+	var keyOptions;
+	if (keyType == 'ecdsa'){
+		keyOptions = req.curveName;
+	} else if (keyType == 'rsa'){
+		keyOptions = req.modulus;
+	} else if (keyType == 'dsa'){
+		keyOptions = req.primeField;
+	}
+
+	if (!isValidSigLength(signature, keyType, keyOptions)){
+		//console.log('Invalid signature length detected');
 		callback(false);
 		return;
 	}
@@ -426,6 +436,7 @@ var verifySignature = function(reqBlob, signature, reqUrl, method, callback){
 	}
 	var reqUrlStr = reqUrl.toString('utf8'); //Start after the first byte (being the verbId);
 	var parsedUrl = url.parse(reqUrlStr);
+	console.log('parsedUrl.path: ' + parsedUrl.path);
 	var httpReqMimic = {
 		headers: {
 			host: parsedUrl.hostname || parsedUrl.host
@@ -828,7 +839,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 								}
 							}
 						} else {
-							console.log('Signature is not valid');
+							//console.log('Signature is not valid');
 							if (strict){
 								writeErrorRes(res, 'Invalid signature', 2);
 							} else {
@@ -1719,11 +1730,35 @@ function isPowerOf2(n){
 	return false;
 }
 
-function isValidSigLength(s){
+function isValidSigLength(s, algoType, algoOptions){
 	var sLen;
 	if (typeof s == 'string') sLen = Buffer.byteLength(s, 'base64');
 	else if (Buffer.isBuffer(s)) sLen = s.length;
-	else throw new Error('Unsupported sig value type');
-	if (sLen == 40 || sLen == 20 || isPowerOf2(sLen)) return true;
-	else return false;
+
+	var expectedLength;
+	if (algoType == 'ecdsa'){
+		var curveLength = /[a-z]+(\d+)[a-z]+\d/g.exec(algoOptions)[1];
+		curveLength = Math.ceil(curveLength / 8);
+		expectedLength = curveLength * 2;
+	} else if (algoType == 'rsa'){
+		var publicKey = algoOptions;
+		var pkByteLength = Buffer.byteLength(publicKey, 'hex');
+		expectedLength = pkByteLength;
+	} else if (algoType == 'dsa'){
+		var publicKey = algoOptions;
+		var pkBitLength = Buffer.byteLength(algoOptions, 'hex') * 8;
+		var qLength; // In bytes
+		if (pkBitLength == 1024){
+			qLength = 20; //160 bits
+		} else if (pkBitLength == 2048){
+			qLength = 28; //224 bits
+		} else if (pkBitLength == 3072){
+			qLength = 32; //256 bits
+		}
+		expectedLength = 2 * qLength;
+	} else if (algoType == 'ed25519'){
+		expectedLength = 64;
+	} else throw new Error('Unsupported sig value type: ' + algoType);
+
+	return expectedLength == sLen;
 }
