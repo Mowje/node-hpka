@@ -43,7 +43,7 @@ for (var i = 0; i < availableAlgos.length; i++){
 	} while (state != 0);
 }
 
-function performTests(keyType, strictMode, useExpress, disallowSessions, next){
+function performTests(keyType, strictMode, useExpress, disallowSessions, next, testIndex, testTotal){
 	if (typeof keyType != 'string') throw new TypeError('keyType must be a string');
 	if (typeof next != 'function') throw new TypeError('next must be a function');
 
@@ -52,6 +52,9 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 	if (!keyTypeAvail) throw new TypeError(keyType + ' keys are unavailable');
 
 	log('---------------NEW TEST CASE---------------');
+	if (testIndex && testTotal){
+		log('Test n. ' + (testIndex + 1) + ' out of '+ testTotal);
+	}
 	log('Key type: ' + keyType);
 	log('Strict mode: ' + strictMode);
 	log('Use express server: ' + useExpress);
@@ -94,7 +97,8 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 
 		if (!disallowSessions){
 			//Default TTL settings
-			calls.push({f: testClient.sessionAgreementReq, a: [cbLoc, 0, undefined, undefined, now() + 7 * 24 * 3600], m: 'Testing SessionId agreement'});
+			calls.push({f: setSessionTTL, a: [7 * 24 * 3600, cbLoc], m: 'Setting Session TTL to 7 days'});
+			calls.push({f: testClient.sessionAgreementReq, a: [cbLoc, 0, undefined, undefined, 7 * 24 * 3600], m: 'Testing SessionId agreement'});
 			calls.push({f: testClient.sessionAuthenticatedReq, a: [cbLoc, strictMode, undefined, true], m: 'Testing session-authenticated request'});
 			calls.push({f: testClient.sessionRevocationReq, a: [cbLoc], m: 'Testing SessionId revocation'});
 			calls.push({f: testClient.sessionAuthenticatedReq, a: [cbLoc, strictMode, undefined, false], m: 'Testing session-authenticated request, with now-revoked SessionId'});
@@ -182,7 +186,7 @@ function doTestCase(){
 			log('HPKA testing (client and server) completed with success');
 			process.exit(0);
 		} else doTestCase(); //Go to next test case
-	});
+	}, testCaseIndex, testCases.length);
 }
 
 doTestCase();

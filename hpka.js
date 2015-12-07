@@ -374,6 +374,13 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 		callback(true); //Even though the signature can't be verified. If callback(false) was called, the middleware will throw an "invalid signature" message to the client
 		return;
 	}
+
+	if (!isValidSigLength(signature)){
+		console.log('Invalid signature length detected');
+		callback(false);
+		return;
+	}
+
 	if (req.keyType == 'ecdsa'){
 		if (req.curveName.indexOf('secp') > -1){ //Checking is the curve is a prime field one
 			var isValid = cryptopp.ecdsa.prime.verify(signedBlob.toString('hex'), (new Buffer(signature, 'base64')).toString('hex'), req.point, req.curveName, 'sha1');
@@ -388,6 +395,10 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 		var isValid = cryptopp.dsa.verify(signedBlob.toString('hex'), (new Buffer(signature, 'base64')).toString('hex'), req.primeField, req.divider, req.base, req.publicElement);
 		callback(isValid)
 	} else if (req.keyType == 'ed25519'){
+		if (Buffer.byteLength(signature, 'base64') != 64){
+			callback(false);
+			return;
+		}
 		var isValid = sodium.api.crypto_sign_verify_detached(new Buffer(signature, 'base64'), signedBlob, new Buffer(req.publicKey, 'hex'));
 		callback(isValid);
 		/*if (typeof signedMessage === 'undefined') {callback(false); return;}
@@ -441,9 +452,16 @@ exports.verifySignature = verifySignature;
 	sessionRevocation: function(HPKAReq, req, callback(revoked))
 }
 */
-exports.expressMiddleware = function(loginCheck, registration, deletion, keyRotation, strict){
+exports.expressMiddleware = function(loginCheck, registration, deletion, keyRotation, strict, sessionCheck, sessionAgreement, sessionRevocation){
 	if (!(typeof loginCheck == 'function' && typeof registration == 'function' && typeof deletion == 'function' && typeof keyRotation == 'function')) throw new TypeError('loginCheck and registration parameters must be event handlers (ie, functions)');
 	if (!(typeof strict == 'undefined' || typeof strict == 'boolean')) throw new TypeError("When 'strict' is defined, it must be a boolean");
+
+	if (sessionCheck){
+		if (typeof sessionCheck != 'function') throw new TypeError('when sessionCheck is defined, it must be a function');
+		if (typeof sessionAgreement != 'function') throw new TypeError('when sessionCheck is defined, sessionAgreement must also be defined and must be a function');
+		if (typeof sessionRevocation != 'function') throw new TypeError('when sessionCheck is defined, sessionRevocation must also be defined and must be a function');
+	}
+
 	var middlewareFunction = function(req, res, next){
 		if (req.get('HPKA-Req') && req.get("HPKA-Signature")){
 			//console.log('HPKA Headers found');
@@ -549,10 +567,10 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 								sessionAgreement(HPKAReq, req, function(accepted, serverSetExpiration){
 									if (accepted){
 										res.set('HPKA-Session-Expiration', serverSetExpiration || sessionExpiration);
-										res.write('Session created');
+										res.send('Session created');
 									} else {
 										res.status(445).set('HPKA-Error', 15);
-										res.write('Session not accepted');
+										res.send('Session not accepted');
 									}
 								});
 							} else if (HPKAReq.actionType == 0x05){
@@ -617,7 +635,8 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 				sessionReq = processSessionBlob(sessionBlob);
 			} catch (e){
 				if (strict){
-					writeErrorRes(res, 'Malformed request', 1);
+					res.status(445).set('HPKA-Error', '1');
+					res.send('Malformed request');
 				} else {
 					next();
 				}
@@ -688,7 +707,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 				} catch (e){
 					if (strict){
 						console.log('parsing error, e : ' + e);
-						writeErrorRes(res, 'HPKA-Req parsing error', 1);
+						writeErrorRes(res, 'Malformed HPKA request', 1);
 					} else {
 						requestHandler(req, res);
 					}
@@ -769,7 +788,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 
 								sessionAgreement(HPKAReq, req, function(accepted, serverSetExpiration){
 									if (accepted){
-										var message = 'Session created'
+										var message = 'Session created';
 										res.writeHead(200, {
 											'Content-Length': message.length,
 											'HPKA-Session-Expiration': serverSetExpiration || sessionExpiration
@@ -820,11 +839,15 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 				} catch (e){
 					throw e;
 					console.log('error : ' + e);
-					writeErrorRes(res, 'Invalid signature', 2);
+					if (strict){
+						writeErrorRes(res, 'Invalid signature', 2);
+					} else {
+						requestHandler(req, res);
+					}
 					return;
 				}
 			} catch (e){
-				throw e;
+				//throw e;
 				console.log('error : ' + e);
 				requestHandler(req, res);
 			}
@@ -1685,4 +1708,22 @@ function clone(o){
 			return c;
 		}
 	} else if (typeO == 'number' || typeO == 'string' || typeO == 'boolean') return o;
+}
+
+function isPowerOf2(n){
+	if (n < 0) return false;
+	do {
+		n /= 2;
+	} while (n >= 2);
+	if (n == 1) return true;
+	return false;
+}
+
+function isValidSigLength(s){
+	var sLen;
+	if (typeof s == 'string') sLen = Buffer.byteLength(s, 'base64');
+	else if (Buffer.isBuffer(s)) sLen = s.length;
+	else throw new Error('Unsupported sig value type');
+	if (sLen == 40 || sLen == 20 || isPowerOf2(sLen)) return true;
+	else return false;
 }

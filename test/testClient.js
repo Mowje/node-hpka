@@ -20,6 +20,8 @@ var testClient;
 
 var serverSettings;
 
+var absMaxForSessionTTL = 45 * 365.25 * 24 * 3600; //1/1/2015 00:00:00 UTC, in seconds. A threshold just helping us determine whether the provided wantedSessionExpiration is a TTL or a timestamp
+
 //The options for each keyType test
 var testKeyOptions = {
 	ed25519: undefined,
@@ -106,6 +108,11 @@ function isFunction(f){
 	return typeof f == 'function';
 }
 
+function equalToOne(val, matchingArray){
+	for (var i = 0; i < matchingArray.length; i++) if (matchingArray[i] == val) return true;
+	return false;
+}
+
 exports.setKeyType = function(_keyType){
 	if (typeof _keyType != 'string') throw new TypeError('_keyType must be a string');
 
@@ -137,7 +144,7 @@ exports.setup = function(_keyPath, _altKeyPath, allowGetSessions){
 	hpka.createClientKey(keyType, testKeyOptions[keyType], keyPath, testPassword);
 	if (newKeyPath) hpka.createClientKey(keyType, testKeyOptions[keyType], newKeyPath, testPassword);
 
-	testClient = new hpka.client(keyPath, testUsername, keyType == 'ed25519' ? password : undefined, allowGetSessions);
+	testClient = new hpka.client(keyPath, testUsername, keyType == 'ed25519' ? testPassword : undefined, allowGetSessions);
 };
 
 //Write the different test cases that must be executed for each key type. Will be called from index.js
@@ -197,7 +204,7 @@ exports.authenticatedReq = function(cb, withForm, strictMode, _expectedBody, _ex
 	if (strictMode) expectedStatusCode = _expectedSuccess ? 200 : 445;
 	else expectedStatusCode = 200;
 
-	var expectedHPKAErrValue = '2';
+	var expectedHPKAErrValue = '3';
 
 	var responseHandler = function(res){
 		processRes(res, function(body){
@@ -315,13 +322,13 @@ exports.spoofedSignatureReq = function(cb, strictMode){
 	var fullKeyPath = path.join(process.cwd(), keyPath);
 	if (keyType == 'ed25519'){
 		kr = new (require('sodium').KeyRing)();
-		kr.load(keyPath, testPassword);
+		kr.load(keyPath, undefined, testPassword);
 	} else {
 		kr = new (require('cryptopp').KeyRing)();
 		kr.load(keyPath);
 	}
 
-	var expectedBody = 'Invalid signature';
+	var expectedBody = strictMode ? 'Invalid signature' : 'Anonymous user';
 	var expectedStatusCode = strictMode ? 445 : 200;
 	var expectedHPKAErrValue = strictMode ? '2' : null;
 
@@ -349,7 +356,7 @@ exports.spoofedSignatureReq = function(cb, strictMode){
 				assert.equal(body, expectedBody, 'Unexpected response for request with spoofed signature: ' + body);
 				if (expectedHPKAErrValue) assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code; received headers ' + JSON.stringify(res.headers));
 			} else {
-				assert.notEqual(body, expectedBody, 'Unexpected response for request with spoofed signature (non-strict mode) : ' + body);
+				assert.equal(body, expectedBody, 'Unexpected response for request with spoofed signature (non-strict mode) : ' + body);
 			}
 			cb();
 		});
@@ -363,7 +370,7 @@ exports.spoofedHostReq = function(cb, strictMode){
 	var fullKeyPath = path.join(process.cwd(), keyPath);
 	if (keyType == 'ed25519'){
 		kr = new (require('sodium').KeyRing)();
-		kr.load(keyPath, testPassword);
+		kr.load(keyPath, undefined, testPassword);
 	} else {
 		kr = new (require('cryptopp').KeyRing)();
 		kr.load(keyPath);
@@ -411,7 +418,7 @@ exports.spoofedUsernameReq = function(withUsername, cb, strictMode){
 	var fullKeyPath = path.join(process.cwd(), keyPath);
 	if (keyType == 'ed25519'){
 		kr = new (require('sodium').KeyRing)();
-		kr.load(keyPath, testPassword);
+		kr.load(keyPath, undefined, testPassword);
 	} else {
 		kr = new (require('cryptopp').KeyRing)();
 		kr.load(keyPath);
@@ -574,9 +581,9 @@ exports.malformedSessionReq = function(cb, strictMode){
 	//Generate 1 to 256 bytes of random data, to base64
 	var sessionStr = crypto.randomBytes(crypto.randomBytes(1)[0] + 1).toString('base64');
 
-	var expectedBody = strictMode ? 'Malformed request' : 'Anonymous user';
+	var expectedBody = strictMode ? ['Malformed request', 'Invalid token'] : 'Anonymous user';
 	var expectedStatusCode = strictMode ? 445 : 200;
-	var expectedHPKAErrValue = '1';
+	var expectedHPKAErrValue = ['1', '2'];
 
 	var reqOptions = {
 		hostname: serverSettings.hostname,
@@ -593,8 +600,12 @@ exports.malformedSessionReq = function(cb, strictMode){
 		if (err) throw err;
 
 		assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code on malformed session request: ' + res.statusCode);
-		assert.equal(body, expectedBody, 'Unexpected body on malformed session request: ' + body);
-		if (strictMode) assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code: ' + res.headers['hpka-error']);
+		if (strictMode){
+			assert(equalToOne(body, expectedBody), 'Unexpected body on malformed session request: ' + body);
+			assert(equalToOne(res.headers['hpka-error'], expectedHPKAErrValue), 'Unexpected HPKA error code: ' + res.headers['hpka-error']);
+		} else {
+			assert.equal(body, expectedBody, 'Unexpected body on malformed session request: ' + body);
+		}
 
 		cb();
 	});
@@ -641,6 +652,10 @@ exports.sessionAgreementReq = function(cb, wantedSessionExpiration, _expectedBod
 	var expectedBody = _expectedBody || ('Session created');
 	var expectedStatusCode = _expectedStatusCode || 200;
 	var expectedSessionExpiration = _expectedSessionExpiration || wantedSessionExpiration || 0; //Server-imposed || user-defined || 0 (default, no TTL on session)
+
+	if (expectedSessionExpiration && expectedSessionExpiration != 0 && expectedSessionExpiration < absMaxForSessionTTL){
+		expectedSessionExpiration += Math.floor(Date.now() / 1000);
+	}
 
 	var newSessionId = crypto.randomBytes(16);
 	testClient.createSession(serverSettings, newSessionId, wantedSessionExpiration, function(res){
