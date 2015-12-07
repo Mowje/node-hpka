@@ -52,7 +52,7 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next, t
 	if (!keyTypeAvail) throw new TypeError(keyType + ' keys are unavailable');
 
 	log('---------------NEW TEST CASE---------------');
-	if (testIndex && testTotal){
+	if (typeof testIndex == 'number' && typeof testTotal == 'number'){
 		log('Test n. ' + (testIndex + 1) + ' out of '+ testTotal);
 	}
 	log('Key type: ' + keyType);
