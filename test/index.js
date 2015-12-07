@@ -52,7 +52,6 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 	if (!keyTypeAvail) throw new TypeError(keyType + ' keys are unavailable');
 
 	log('---------------NEW TEST CASE---------------');
-	log('Current test case');
 	log('Key type: ' + keyType);
 	log('Strict mode: ' + strictMode);
 	log('Use express server: ' + useExpress);
@@ -118,32 +117,38 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 
 	function testSpoofedRequests(N){
 		var calls = [
-			{f: testClient.spoofedSignatureReq, a: [cbLoc, strictMode]},
-			{f: testClient.spoofedHostReq, a: [cbLoc, strictMode]},
-			{f: testClient.spoofedUsernameReq, a: ['test2', cbLoc, strictMode]}
+			{f: testClient.spoofedSignatureReq, a: [cbLoc, strictMode], m: 'Sending request with spoofed signature'},
+			{f: testClient.spoofedHostReq, a: [cbLoc, strictMode], m: 'Sending request with wrong hostname and path'},
+			{f: testClient.spoofedUsernameReq, a: ['test2', cbLoc, strictMode], m: 'Sending request with spoofed username'}
 		];
 
-		if (!disallowSessions) calls.push({f: testClient.spoofedSessionReq, a: ['test2', cbLoc]});
+		if (!disallowSessions) calls.push({f: testClient.spoofedSessionReq, a: ['test2', cbLoc, strictMode], m: 'Sending sessionId-backed request with spoofed username'});
 
 		chainAsyncFunctions(calls, N);
 	}
 
 	function testMalformedRequests(N){
 		var calls = [
-			{f: testClient.malformedReq, a: [cbLoc, strictMode]},
-			{f: testClient.malformedReqNonBase64, a: [cbLoc, strictMode]}
+			{f: testClient.malformedReq, a: [cbLoc, strictMode], m: 'Sending malformed authenticated request'},
+			{f: testClient.malformedReqNonBase64, a: [cbLoc, strictMode], m: 'Sending fuzzing-like malformed authenticated request'}
 		];
 
 		if (!disallowSessions){
-			calls.push({f: testClient.malformedSessionReq, a: [cbLoc]});
-			calls.push({f: testClient.malformedSessionReqNonBase64, a: [cbLoc]});
+			calls.push({f: testClient.malformedSessionReq, a: [cbLoc, strictMode], m: 'Sending malformed sessionId-backed request'});
+			calls.push({f: testClient.malformedSessionReqNonBase64, a: [cbLoc, strictMode], m: 'Sending fuzzing-like malformed sessionId-backed request'});
 		}
 
 		chainAsyncFunctions(calls, N);
 	}
 
 	function cleanup(N){
-		testClient.deletionReq(N);
+
+		var calls = [
+			{f: testClient.deletionReq, a: [cbLoc], m: 'Deleting user account'},
+			{f: testServer.stop, a: [cbLoc], m: 'Stopping server'}
+		];
+
+		chainAsyncFunctions(calls, N);
 	}
 
 	function setSessionTTL(t, cb){
@@ -160,7 +165,10 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 		{f: cleanup, a: [cbLoc]}
 	];
 
-	chainAsyncFunctions(testGroups, next);
+	chainAsyncFunctions(testGroups, function(){
+		log('---------------END TEST CASE---------------');
+		next();
+	});
 }
 
 function doTestCase(){

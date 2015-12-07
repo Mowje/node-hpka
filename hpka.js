@@ -27,6 +27,8 @@ var http = require('http');
 var https = require('https');
 var url = require('fast-url-parser');
 
+var absMaxForSessionTTL = 45 * 365.25 * 24 * 3600; //1/1/2015 00:00:00 UTC, in seconds. A threshold just helping us determine whether the provided wantedSessionExpiration is a TTL or a timestamp
+
 exports.supportedAlgorithms = function(){
 	var algos = [];
 	if (cryptopp){
@@ -284,7 +286,7 @@ var processReqBlob = function(pubKeyBlob){
 			byteIndex += 4;
 			//Check that it's in the future
 			var expirationTimestamp = joinUInt(expLeft, expRight);
-			if (expirationTimestamp < Date.now()){
+			if (expirationTimestamp < Math.floor(Date.now()/1000)){
 				throw new RangeError('expiration is already past');
 			}
 			req.sessionExpiration = expirationTimestamp;
@@ -614,7 +616,11 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 			try {
 				sessionReq = processSessionBlob(sessionBlob);
 			} catch (e){
-				writeErrorRes(res, 'Malformed request', 1);
+				if (strict){
+					writeErrorRes(res, 'Malformed request', 1);
+				} else {
+					next();
+				}
 				return;
 			}
 
@@ -680,8 +686,12 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 				try {
 					HPKAReq = processReqBlob(HPKAReqBlob);
 				} catch (e){
-					console.log('parsing error, e : ' + e);
-					writeErrorRes(res, 'HPKA-Req parsing error', 1);
+					if (strict){
+						console.log('parsing error, e : ' + e);
+						writeErrorRes(res, 'HPKA-Req parsing error', 1);
+					} else {
+						requestHandler(req, res);
+					}
 					return;
 				}
 				//Checking the signature then calling the handlers according to the actionType
@@ -824,7 +834,11 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 			try {
 				sessionReq = processSessionBlob(sessionBlob);
 			} catch (e){
-				writeErrorRes(res, 'Malformed request', 1);
+				if (strict){
+					writeErrorRes(res, 'Malformed request', 1);
+				} else {
+					next();
+				}
 				return;
 			}
 
@@ -977,11 +991,11 @@ exports.client = function(keyFilename, usernameVal, password, allowGetSessions){
 
 		if (sessionId && !((Buffer.isBuffer(sessionId) || typeof sessionId == 'string') && sessionId.length > 0 && sessionId.length < 256)) throw new TypeError('when sessionId is defined, it must be a non-null string, up to 255 bytes long');
 
-		if (wantedSessionExpiration){
+		/*if (wantedSessionExpiration){
 			if (typeof wantedSessionExpiration != 'number') throw new TypeError('when defined, wantedSessionExpiration must a number');
 			if (Math.floor(wantedSessionExpiration) != wantedSessionExpiration) throw new TypeError('when defined, wantedSessionExpiration must be an integer number');
 			if (!(wantedSessionExpiration == 0 || wantedSessionExpiration > Math.floor(Date.now() / 1000))) throw new TypeError('when defined, wantedSessionExpiration must be either equal to zero must be UTC Unix Epoch (in seconds) that is not yet past');
-		}
+		}*/
 
 		//Cloning the options object, before starting working on it
 		options = clone(options);
@@ -1247,6 +1261,19 @@ exports.client = function(keyFilename, usernameVal, password, allowGetSessions){
 		if (typeof callback != 'function') throw new TypeError('callback must be a function');
 		if (errorHandler && typeof errorHandler != 'function') throw new TypeError('when defined, errorHandler must be a function');
 
+		var tNow = Math.floor(Date.now() / 1000);
+
+		if (wantedSessionExpiration){
+			if (typeof wantedSessionExpiration != 'number') throw new TypeError('when defined, wantedSessionExpiration must be a number');
+			if (Math.floor(wantedSessionExpiration) != wantedSessionExpiration) throw new TypeError('when defined, wantedSessionExpiration must be an integer number');
+			if (wantedSessionExpiration != 0 && wantedSessionExpiration < absMaxForSessionTTL){ //Provided value is a TTL; convert to timestamp
+				wantedSessionExpiration += tNow;
+			}
+			if (wantedSessionExpiration != 0){//When a session life is defined, assert that the value is in the future
+				assert(wantedSessionExpiration > tNow, 'Internal value');
+			}
+		}
+
 		stdReq(options, undefined, 0x04, function(res){
 			//Checking that no hpka error occured
 			if (res.statusCode == 445){
@@ -1342,7 +1369,7 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback, e
 	if (sessionId && !((Buffer.isBuffer(sessionId) || typeof sessionId == 'string') && sessionId.length > 0 && sessionId.length < 256)) throw new TypeError('when defined, sessionId must be a non-null string or buffer, max 255 bytes long');
 	if (sessionExpiration){
 		if (typeof sessionExpiration != 'number') throw new TypeError('when defined, sessionExpiration must be a number');
-		if (Math.floor(sessionExpiration) == sessionExpiration) throw new TypeError('when defined, sessionExpiration must be an integer number');
+		if (Math.floor(sessionExpiration) != sessionExpiration) throw new TypeError('when defined, sessionExpiration must be an integer number');
 		if (sessionExpiration < 0 || (sessionExpiration > 0 && Math.floor(Date.now()/1000) > sessionExpiration)) throw new TypeError('when defined, sessionExpiration must either be equal to zero or a UTC Unix Epoch (in seconds) that is not yet passed');
 	}
 
