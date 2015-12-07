@@ -11,6 +11,8 @@ var hpka = require('hpka');
 var testClient = require('./testClient');
 var testServer = require('./testServer');
 
+var cbLoc = '#cbhere#';
+
 var yell = process.argv.length > 2 && process.argv[2] == 'verbose';
 
 var serverSettings = {
@@ -64,9 +66,8 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 		log('Starting server');
 		testServer.start(function(){
 			log('Server has been started');
+			N();
 		});
-
-		N();
 	}
 
 	function setupClient(N){
@@ -78,11 +79,10 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 	}
 
 	function testNormalRequests(N){
-
 		var calls = [
-			{f: testClient.unauthenticatedReq, a: ['#cbhere#']}, //Testing an unauthenticated request
-			{f: testClient.registrationReq, a: ['#cbhere#']}, //Registration
-			{f: testClient.authenticatedReq, a: ['#cbhere#']} //Authenticated request
+			{f: testClient.unauthenticatedReq, a: [cbLoc]}, //Testing an unauthenticated request
+			{f: testClient.registrationReq, a: [cbLoc]}, //Registration
+			{f: testClient.authenticatedReq, a: [cbLoc]} //Authenticated request
 		];
 
 		chainAsyncFunctions(calls, N);
@@ -118,7 +118,7 @@ function chainAsyncFunctions(functionsList, callback){
 	function doOne(){
 		var theFunction = functionsList[fIndex].f;
 		var theArguments = functionsList[fIndex].a.slice();
-		insertCallbackInArguments(theArguments, next);
+		insertCallbackInArguments(theArguments, next, true);
 
 		theFunction.apply(this, theArguments);
 	}
@@ -136,14 +136,14 @@ function chainAsyncFunctions(functionsList, callback){
 
 }
 
-function insertCallbackInArguments(ar, cb){
+function insertCallbackInArguments(ar, cb, assertFound){
 	for (var i = 0; i < ar.length; i++){
-		if (ar[i] == '#cbhere#'){
+		if (ar[i] == cbLoc){
 			ar[i] = cb;
 			return;
 		}
 	}
-	throw new Error('#cbhere# cannot be found in array: ' + JSON.stringify(ar));
+	if (assertFound) throw new Error('#cbhere# cannot be found in array: ' + JSON.stringify(ar));
 }
 
 function log(m){
