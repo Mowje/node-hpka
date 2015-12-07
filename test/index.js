@@ -145,6 +145,7 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 
 		var calls = [
 			{f: testClient.deletionReq, a: [cbLoc], m: 'Deleting user account'},
+			{f: testClient.authenticatedReq, a: [cbLoc, false, strictMode, undefined, false], m: 'Sending an authenticated request, with a deleted account. Expected failure'},
 			{f: testServer.stop, a: [cbLoc], m: 'Stopping server'}
 		];
 
@@ -167,6 +168,7 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 
 	chainAsyncFunctions(testGroups, function(){
 		log('---------------END TEST CASE---------------');
+		log('');
 		next();
 	});
 }
