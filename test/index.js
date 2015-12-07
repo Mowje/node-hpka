@@ -106,7 +106,7 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 			calls.push({f: testClient.sessionRevocationReq, a: [cbLoc], m: 'Testing SessionId revocation'});
 			calls.push({f: testClient.sessionAuthenticatedReq, a: [cbLoc, strictMode, undefined, false], m: 'Testing session-authenticated request, with now-revoked SessionId'});
 			//TTL = 1 day
-			calls.push({f: setSessionTTL, a: [24 * 3600, cbLoc], m: 'Setting Session Id to one day'});
+			calls.push({f: setSessionTTL, a: [24 * 3600, cbLoc], m: 'Setting Session TTL to one day'});
 			calls.push({f: testClient.sessionAgreementReq, a: [cbLoc, 1200, undefined, undefined, now() + 1200], m: 'Testing SessionId agreement, with user-imposed TTL'});
 			calls.push({f: testClient.sessionAuthenticatedReq, a: [cbLoc, strictMode, undefined, true], m: 'Testing session-authenticated request, with user-imposed TTL'});
 			calls.push({f: testClient.sessionRevocationReq, a: [cbLoc], m: 'Testing SessionId revocation'});
