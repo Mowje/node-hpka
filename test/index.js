@@ -6,7 +6,7 @@
 * - API behaviour
 */
 
-var hpka = require('hpka');
+var hpka = require('../hpka.js');
 
 var testClient = require('./testClient');
 var testServer = require('./testServer');
@@ -74,6 +74,7 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 	function setupClient(N){
 		testClient.setKeyType(keyType);
 		testClient.setServerSettings(serverSettings);
+		log('Generating identity key');
 		testClient.setup();
 
 		N();
@@ -81,10 +82,36 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 
 	function testNormalRequests(N){
 		var calls = [
-			{f: testClient.unauthenticatedReq, a: [cbLoc]}, //Testing an unauthenticated request
-			{f: testClient.registrationReq, a: [cbLoc]}, //Registration
-			{f: testClient.authenticatedReq, a: [cbLoc]} //Authenticated request
+			{f: testClient.unauthenticatedReq, a: [cbLoc], m: 'Testing an unauthenticated request'},
+			{f: testClient.authenticatedReq, a: [cbLoc, false, strictMode, undefined, false], m: 'Authenticated request before registration. Expected failure'},
+			{f: testClient.registrationReq, a: [cbLoc], m: 'User registration'},
+			{f: testClient.authenticatedReq, a: [cbLoc, false, strictMode], m: 'Authenticated request'},
 		];
+
+		if (useExpress) calls.push({f: testClient.authenticatedReq, a: [cbLoc, true, strictMode], m: 'Authenticated request with FormData'});
+
+		//Add key rotation task in all cases
+		calls.push({f: testClient.keyRotationReq, a: [cbLoc, './newhpkaclient.key'], m: 'Testing key rotation request'});
+
+		if (!disallowSessions){
+			//Default TTL settings
+			calls.push({f: testClient.sessionAgreementReq, a: [cbLoc, 0, undefined, undefined, now() + 7 * 24 * 3600], m: 'Testing SessionId agreement'});
+			calls.push({f: testClient.sessionAuthenticatedReq, a: [cbLoc, strictMode, undefined, true], m: 'Testing session-authenticated request'});
+			calls.push({f: testClient.sessionRevocationReq, a: [cbLoc], m: 'Testing SessionId revocation'});
+			calls.push({f: testClient.sessionAuthenticatedReq, a: [cbLoc, strictMode, undefined, false], m: 'Testing session-authenticated request, with now-revoked SessionId'});
+			//No TTL
+			calls.push({f: setSessionTTL, a: [0, cbLoc], m: 'Setting Session TTL to infinity'});
+			calls.push({f: testClient.sessionAgreementReq, a: [cbLoc, 0, undefined, undefined, 0], m: 'Testing SessionId agreement, with no TTL'});
+			calls.push({f: testClient.sessionAuthenticatedReq, a: [cbLoc, strictMode, undefined, true], m: 'Testing session-authenticated request, with a TTL-less SessionId'});
+			calls.push({f: testClient.sessionRevocationReq, a: [cbLoc], m: 'Testing SessionId revocation'});
+			calls.push({f: testClient.sessionAuthenticatedReq, a: [cbLoc, strictMode, undefined, false], m: 'Testing session-authenticated request, with now-revoked SessionId'});
+			//TTL = 1 day
+			calls.push({f: setSessionTTL, a: [24 * 3600, cbLoc], m: 'Setting Session Id to one day'});
+			calls.push({f: testClient.sessionAgreementReq, a: [cbLoc, 1200, undefined, undefined, now() + 1200], m: 'Testing SessionId agreement, with user-imposed TTL'});
+			calls.push({f: testClient.sessionAuthenticatedReq, a: [cbLoc, strictMode, undefined, true], m: 'Testing session-authenticated request, with user-imposed TTL'});
+			calls.push({f: testClient.sessionRevocationReq, a: [cbLoc], m: 'Testing SessionId revocation'});
+			calls.push({f: testClient.sessionAuthenticatedReq, a: [cbLoc, strictMode, undefined, false], m: 'Testing session-authenticated request, with now-revoked SessionId'});
+		}
 
 		chainAsyncFunctions(calls, N);
 	}
@@ -114,6 +141,26 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 
 		chainAsyncFunctions(calls, N);
 	}
+
+	function cleanup(N){
+		testClient.deletionReq(N);
+	}
+
+	function setSessionTTL(t, cb){
+		testServer.setMaxSessionLife(t);
+		cb();
+	}
+
+	var testGroups = [
+		{f: setupClient, a: [cbLoc]},
+		{f: setupServer, a: [cbLoc]},
+		{f: testNormalRequests, a: [cbLoc]},
+		{f: testSpoofedRequests, a: [cbLoc]},
+		{f: testMalformedRequests, a: [cbLoc]},
+		{f: cleanup, a: [cbLoc]}
+	];
+
+	chainAsyncFunctions(testGroups, next);
 }
 
 function doTestCase(){
@@ -128,6 +175,8 @@ function doTestCase(){
 	});
 }
 
+doTestCase();
+
 function chainAsyncFunctions(functionsList, callback){
 	var fIndex = 0;
 
@@ -135,6 +184,8 @@ function chainAsyncFunctions(functionsList, callback){
 		var theFunction = functionsList[fIndex].f;
 		var theArguments = functionsList[fIndex].a.slice();
 		insertCallbackInArguments(theArguments, next, true);
+
+		if (functionsList[fIndex].m) log(functionsList[fIndex].m);
 
 		theFunction.apply(this, theArguments);
 	}
@@ -164,6 +215,10 @@ function insertCallbackInArguments(ar, cb, assertFound){
 
 function log(m){
 	if (yell) console.log(m);
+}
+
+function now(){
+	return Math.floor(Date.now() / 1000);
 }
 
 function clone(o){

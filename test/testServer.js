@@ -323,3 +323,12 @@ exports.setServerPort = function(p){
 
 	serverPort = p;
 };
+
+exports.setMaxSessionLife = function(ttl){
+	if (!(typeof ttl == 'number' && ttl > 0 && Math.floor(ttl) == ttl)) throw new TypeError('ttl must be a strictly positive integer number');
+	maxSessionLife = ttl;
+};
+
+exports.getMaxSessionLife = function(){
+	return maxSessionLife;
+};

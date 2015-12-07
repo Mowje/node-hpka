@@ -131,10 +131,10 @@ exports.setServerSettings = function(_serverSettings){
 
 exports.setup = function(_keyPath, _altKeyPath, allowGetSessions){
 	keyPath = _keyPath || keyPath;
-	altKeyPath = _altKeyPath || altKeyPath;
+	newKeyPath = _altKeyPath || newKeyPath;
 
-	hpka.createClientKey(keyType, testKeyOptions[keyType], keyPath, password);
-	if (altKeyPath) hpka.createClientKey(keyPath, testKeyOptions[keyType], altKeyPath, password);
+	hpka.createClientKey(keyType, testKeyOptions[keyType], keyPath, testPassword);
+	if (newKeyPath) hpka.createClientKey(keyPath, testKeyOptions[keyType], newKeyPath, testPassword);
 
 	testClient = new hpka.client(keyPath, testUsername, keyType == 'ed25519' ? password : undefined, allowGetSessions);
 };
@@ -488,7 +488,7 @@ exports.malformedReq = function(cb, strictMode){
 		path: serverSettings.path,
 		method: serverSettings.method,
 		port: serverSettings.port,
-		headers {
+		headers: {
 			'HPKA-Req': fakeHPKAReq,
 			'HPKA-Signature': fakeSig
 		}
@@ -528,7 +528,7 @@ exports.malformedReqNonBase64 = function(cb, strictMode){
 		path: serverSettings.path,
 		method: serverSettings.method,
 		port: serverSettings.port,
-		headers {
+		headers: {
 			'HPKA-Req': fakeHPKAReq,
 			'HPKA-Signature': fakeSig
 		}
