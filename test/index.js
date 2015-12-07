@@ -56,6 +56,7 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 	log('Key type: ' + keyType);
 	log('Strict mode: ' + strictMode);
 	log('Use express server: ' + useExpress);
+	log('Disallow sessions: ' + disallowSessions);
 	log('-------------------------------------------');
 
 	function setupServer(N){
