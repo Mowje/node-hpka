@@ -860,7 +860,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 */
 //Create a client key pair and returns its keyring
 exports.createClientKey = function(keyType, options, filename, password, doNotReturn){
-	if (!(keyType == 'ecdsa' || keyType == 'dsa' || keyType == 'rsa' || keyType == 'ed25519')) throw new TypeError("Invalid key type. Must be either 'ecdsa', 'dsa' or 'rsa'");
+	if (!(keyType == 'ecdsa' || keyType == 'dsa' || keyType == 'rsa' || keyType == 'ed25519')) throw new TypeError("Invalid key type. Must be either 'ecdsa', 'dsa', 'rsa' or 'ed25519'. " + keyType + " is not valid");
 	if (password && !(Buffer.isBuffer(password) || typeof password == 'string')) throw new TypeError('When defined, password must either be a buffer or a string');
 	var keyRing;
 	if (keyType == 'ecdsa' || keyType == 'dsa' || keyType == 'rsa'){ //Crypto++ cases
@@ -971,11 +971,11 @@ exports.client = function(keyFilename, usernameVal, password, allowGetSessions){
 	function stdReq(options, body, actionType, callback, errorHandler, sessionId, wantedSessionExpiration){
 		if (!(options && typeof options == 'object')) throw new TypeError('"options" parameter must be defined and must be an object, according to the default http(s) node modules & node-hpka documentations');
 		if (!(typeof actionType == 'number')) throw new TypeError('"actionType" parameter must be defined and must be a number');
-		if (!(actionType >= 0x00 && actionType <= 0x02)) throw new TypeError('"actionType" parameter must be 0x00 <= actionType <= 0x02 when calling stdReq(). Note that keyRotations have their methods (because they require than a simple HPKA-Req blob and its signature');
+		if (!(actionType >= 0x00 && actionType <= 0x05 && actionType != 0x03)) throw new TypeError('"actionType" parameter must be 0x00 <= actionType <= 0x05 && actionType != 0x03 when calling stdReq(). Note that keyRotations have their methods (because they require than a simple HPKA-Req blob and its signature');
 		if (!(callback && typeof callback == 'function')) throw new TypeError('"callback" must be a function');
 		if (errorHandler && typeof errorHandler != 'function') throw new TypeError('"errorHandler must be a function"');
 
-		if (sessionId && !(typeof sessionId == 'string' && sessionId.length > 0 && sessionId.length < 256)) throw new TypeError('when sessionId is defined, it must be a non-null string, up to 255 bytes long');
+		if (sessionId && !((Buffer.isBuffer(sessionId) || typeof sessionId == 'string') && sessionId.length > 0 && sessionId.length < 256)) throw new TypeError('when sessionId is defined, it must be a non-null string, up to 255 bytes long');
 
 		if (wantedSessionExpiration){
 			if (typeof wantedSessionExpiration != 'number') throw new TypeError('when defined, wantedSessionExpiration must a number');
@@ -1038,7 +1038,7 @@ exports.client = function(keyFilename, usernameVal, password, allowGetSessions){
 					return;
 				}
 			} else req.end();
-		});
+		}, sessionId, wantedSessionExpiration);
 	}
 
 	function stdSessionReq(options, body, callback, errorHandler, sessionId){
@@ -1530,13 +1530,13 @@ function buildPayload(keyRing, username, actionType, hostnameAndPath, verb, call
 				callback(reqEncoded, signature.toString('base64'));
 			}, true); //Last parameter : detached signature
 		} else throw new TypeError('Unknown key type : ' + keyType);
-	});
+	}, undefined, sessionId, sessionExpiration);
 }
 
 exports.buildPayload = buildPayload;
 
 function buildSessionPayload(username, sessionId){
-	if (typeof username == 'string') throw new TypeError('username must be a string');
+	if (typeof username != 'string') throw new TypeError('username must be a string');
 	if (username.length == 0 || username.length > 255) throw new TypeError('username must be at least 1 byte long and at most 255 bytes long');
 	if (!(Buffer.isBuffer(sessionId) || typeof sessionId == 'string')) throw new TypeError('sessionId must either be a buffer or a string');
 	if (sessionId.length == 0 || sessionId.length > 255) throw new TypeError('sessionId must be at least 1 byte long and at most 255 bytes long');

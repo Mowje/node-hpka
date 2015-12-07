@@ -16,7 +16,7 @@ var cbLoc = '#cbhere#';
 var yell = process.argv.length > 2 && process.argv[2] == 'verbose';
 
 var serverSettings = {
-	host: 'localhost',
+	hostname: 'localhost',
 	port: 2500,
 	method: 'GET',
 	path: '/'

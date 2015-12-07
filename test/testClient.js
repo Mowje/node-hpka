@@ -1,5 +1,6 @@
 var http = require('http');
 var fs = require('fs');
+var path = require('path');
 var assert = require('assert');
 var hpka = require('../hpka');
 var crypto = require('crypto');
@@ -134,7 +135,7 @@ exports.setup = function(_keyPath, _altKeyPath, allowGetSessions){
 	newKeyPath = _altKeyPath || newKeyPath;
 
 	hpka.createClientKey(keyType, testKeyOptions[keyType], keyPath, testPassword);
-	if (newKeyPath) hpka.createClientKey(keyPath, testKeyOptions[keyType], newKeyPath, testPassword);
+	if (newKeyPath) hpka.createClientKey(keyType, testKeyOptions[keyType], newKeyPath, testPassword);
 
 	testClient = new hpka.client(keyPath, testUsername, keyType == 'ed25519' ? password : undefined, allowGetSessions);
 };
@@ -143,10 +144,10 @@ exports.setup = function(_keyPath, _altKeyPath, allowGetSessions){
 exports.unauthenticatedReq = function(cb){
 	if (typeof cb != 'function') throw new TypeError('cb must be a function');
 
-	performReq(serverSettings, function(err, body, res){
+	performReq(serverSettings, undefined, function(err, body, res){
 		if (err) throw err;
 		assert.equal(res.statusCode, 200, 'On successful anonymous requests, status code must be 200');
-		assert.equal(body, 'Anonymous user', 'Unexpected string from server: ' + data);
+		assert.equal(body, 'Anonymous user', 'Unexpected string from server: ' + body);
 		cb();
 	});
 };
@@ -173,7 +174,6 @@ exports.authenticatedReq = function(cb, withForm, strictMode, _expectedBody, _ex
 	if (typeof cb != 'function') throw new TypeError('cb must be a function');
 
 	if (_expectedBody && !isString(_expectedBody)) throw new TypeError('when defined, _expectedBody must be a non-null string');
-	validStatusCode(_expectedStatusCode);
 
 	if (_expectedSuccess == null || typeof _expectedSuccess == 'undefined') _expectedSuccess = true; //If _expectedSuccess is omitted, set it to true
 
@@ -220,6 +220,7 @@ exports.authenticatedReq = function(cb, withForm, strictMode, _expectedBody, _ex
 		theForm.append('field-two', 'test 2');
 
 		var submitReqOptions = {
+			hostname: serverSettings.hostname,
 			host: serverSettings.host,
 			port: serverSettings.port,
 			method: 'POST',
@@ -294,7 +295,7 @@ exports.keyRotationReq = function(cb, newKeyPath, _expectedBody, _expectedStatus
 
 			cb();
 		});
-	}, function(err){throw err;});
+	}, testPassword, function(err){throw err;});
 
 };
 
@@ -324,6 +325,7 @@ exports.spoofedSignatureReq = function(cb, strictMode){
 
 	hpka.buildPayload(kr, testUsername, 0x00, hostAndPath, serverSettings.method, function(reqStr, sigStr){
 		var reqOptions = {
+			hostname: serverSettings.hostname,
 			host: serverSettings.host,
 			path: serverSettings.path,
 			method: serverSettings.method,
@@ -369,6 +371,7 @@ exports.spoofedHostReq = function(cb, strictMode){
 
 	hpka.buildPayload(kr, testUsername, 0x00, 'badservernameand/path', serverSettings.method, function(reqStr, sigStr){
 		var reqOptions = {
+			hostname: serverSettings.hostname,
 			host: serverSettings.host,
 			path: serverSettings.path,
 			method: serverSettings.method,
@@ -418,6 +421,7 @@ exports.spoofedUsernameReq = function(withUsername, cb, strictMode){
 
 	hpka.buildPayload(kr, withUsername, 0x00, hostAndPath, serverSettings.method, function(reqStr, sigStr){
 		var reqOptions = {
+			hostname: serverSettings.hostname,
 			host: serverSettings.host,
 			path: serverSettings.path,
 			method: serverSettings.method,
@@ -455,6 +459,7 @@ exports.spoofedSessionReq = function(withUsername, cb){
 	var expectedBody = 'Invalid token'
 
 	var reqOptions = {
+		hostname: serverSettings.hostname,
 		host: serverSettings.host,
 		port: serverSettings.port,
 		method: serverSettings.method,
@@ -484,6 +489,7 @@ exports.malformedReq = function(cb, strictMode){
 	var fakeSig = crypto.randomBytes(32).toString('base64');
 
 	var reqOptions = {
+		hostname: serverSettings.hostname,
 		host: serverSettings.host,
 		path: serverSettings.path,
 		method: serverSettings.method,
@@ -524,6 +530,7 @@ exports.malformedReqNonBase64 = function(cb, strictMode){
 	var fakeSig = crypto.randomBytes(32).toString('utf8');
 
 	var reqOptions = {
+		hostname: serverSettings.hostname,
 		host: serverSettings.host,
 		path: serverSettings.path,
 		method: serverSettings.method,
@@ -562,6 +569,7 @@ exports.malformedSessionReq = function(cb){
 	var expectedHPKAErrValue = '1';
 
 	var reqOptions = {
+		hostname: serverSettings.hostname,
 		host: serverSettings.host,
 		port: serverSettings.port,
 		method: serverSettings.method,
@@ -593,6 +601,7 @@ exports.malformedSessionReqNonBase64 = function(cb){
 	var expectedHPKAErrValue = '1';
 
 	var reqOptions = {
+		hostname: serverSettings.hostname,
 		host: serverSettings.host,
 		port: serverSettings.port,
 		method: serverSettings.method,
@@ -641,7 +650,6 @@ exports.sessionAgreementReq = function(cb, wantedSessionExpiration, _expectedBod
 			cb();
 		});
 	}, function(err){throw err;});
-
 };
 
 exports.sessionRevocationReq = function(cb, _expectedBody, _expectedStatusCode){
@@ -657,6 +665,7 @@ exports.sessionRevocationReq = function(cb, _expectedBody, _expectedStatusCode){
 		processRes(res, function(body){
 			assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code: ' + res.statusCode);
 			assert.equal(body, expectedBody, 'Unexpected response body on session revocation: ' + body);
+			cb();
 		});
 	}, function(err){throw err;});
 
@@ -695,6 +704,7 @@ exports.sessionAuthenticatedReq = function(cb, strictMode, _expectedBody, _expec
 	var sessionPayloadStr = hpka.buildSessionPayload(testUsername, sId);
 
 	var reqOptions = {
+		hostname: serverSettings.hostname,
 		host: serverSettings.host,
 		port: serverSettings.port,
 		method: serverSettings.method,

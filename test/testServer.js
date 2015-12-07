@@ -113,11 +113,13 @@ var requestHandler = function(req, res){
 		var method = req.method;
 		var reqUrl = 'http://' + (req.headers.hostname || req.headers.host) + req.url
 		//console.log('HpkaReq: ' + hpkaReq + '; HpkaSig: ' + hpkaSig + '; ' + method + '; reqUrl: ' + reqUrl);
-		hpka.verifySignature(hpkaReq, hpkaSig, reqUrl, method, function(err, isValid, username, hpkaReq){
-			if (err) console.error('Error in hpkaReq: ' + err);
-			if (!isValid) console.log('External validation failed');
-			//else console.log('External validation success: ' + username + ': ' + JSON.stringify(hpkaReq));
-		});
+		if (hpkaReq && hpkaSig){
+			hpka.verifySignature(hpkaReq, hpkaSig, reqUrl, method, function(err, isValid, username, hpkaReq){
+				if (err) console.error('Error in hpkaReq: ' + err);
+				if (!isValid) console.log('External validation failed');
+				//else console.log('External validation success: ' + username + ': ' + JSON.stringify(hpkaReq));
+			});
+		}
 	} else {
 		//console.log(req.method + ' ' + req.url + ' anonymous request');
 		body = 'Anonymous user';
@@ -325,7 +327,7 @@ exports.setServerPort = function(p){
 };
 
 exports.setMaxSessionLife = function(ttl){
-	if (!(typeof ttl == 'number' && ttl > 0 && Math.floor(ttl) == ttl)) throw new TypeError('ttl must be a strictly positive integer number');
+	if (!(typeof ttl == 'number' && ttl >= 0 && Math.floor(ttl) == ttl)) throw new TypeError('ttl must be a positive integer number');
 	maxSessionLife = ttl;
 };
 
