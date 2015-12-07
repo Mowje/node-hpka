@@ -450,7 +450,7 @@ exports.spoofedSessionReq = function(withUsername, cb){
 	var sId = crypto.randomBytes(10);
 	var sessionPayloadStr = hpka.buildSessionPayload(withUsername, sId);
 
-	var expectedBody = 'Invalid'
+	var expectedBody = 'Invalid token'
 
 	var reqOptions = {
 		host: serverSettings.host,
