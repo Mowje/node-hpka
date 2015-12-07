@@ -218,7 +218,9 @@ var sessionAgreement = function(HPKAReq, req, callback){
 	var currentMaxExpiration = n + maxSessionLife;
 	//User-provided expiration date for the sessionId
 	var userSetExpiration = HPKAReq.sessionExpiration || 0;
-	if (userSetExpiration == 0 || userSetExpiration > currentMaxExpiration){ //Enforce lifespan
+	if (maxSessionLife == 0){ //If the server doesn't impose a TTL, take the user-provided value as TTL
+		finalSessionExpiration = userSetExpiration;
+	} else if (userSetExpiration == 0 || userSetExpiration > currentMaxExpiration){ //Server-set TTL. Enforce lifespan
 		finalSessionExpiration = currentMaxExpiration;
 	} else {
 		finalSessionExpiration = userSetExpiration;
