@@ -175,6 +175,8 @@ exports.authenticatedReq = function(cb, withForm, strictMode, _expectedBody, _ex
 	if (_expectedBody && !isString(_expectedBody)) throw new TypeError('when defined, _expectedBody must be a non-null string');
 	validStatusCode(_expectedStatusCode);
 
+	if (_expectedSuccess == null || typeof _expectedSuccess == 'undefined') _expectedSuccess = true; //If _expectedSuccess is omitted, set it to true
+
 	var expectedBody = _expectedBody;
 	if (_expectedSuccess){
 		expectedBody = expectedBody || ('Authenticated as : ' + testUsername);
@@ -665,6 +667,9 @@ exports.sessionAuthenticatedReq = function(cb, strictMode, _expectedBody, _expec
 
 	if (_expectedBody && !isString(_expectedBody)) throw new TypeError('when defined, _expectedBody must be a non-null string');
 	var expectedBody = _expectedBody;
+
+	if (_expectedSuccess == null || typeof _expectedSuccess == 'undefined') _expectedSuccess = true; //If _expectedSuccess is omitted, set it to true
+
 	if (_expectedSuccess){
 		expectedBody = expectedBody || ('Authenticated as : ' + testUsername);
 	} else {
