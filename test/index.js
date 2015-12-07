@@ -89,15 +89,30 @@ function performTests(keyType, strictMode, useExpress, disallowSessions, next){
 	}
 
 	function testSpoofedRequests(N){
+		var calls = [
+			{f: testClient.spoofedSignatureReq, a: [cbLoc, strictMode]},
+			{f: testClient.spoofedHostReq, a: [cbLoc, strictMode]},
+			{f: testClient.spoofedUsernameReq, a: ['test2', cbLoc, strictMode]}
+		];
 
+		if (!disallowSessions) calls.push({f: testClient.spoofedSessionReq, a: ['test2', cbLoc]});
+
+		chainAsyncFunctions(calls, N);
 	}
 
 	function testMalformedRequests(N){
+		var calls = [
+			{f: testClient.malformedReq, a: [cbLoc, strictMode]},
+			{f: testClient.malformedReqNonBase64, a: [cbLoc, strictMode]}
+		];
 
+		if (!disallowSessions){
+			calls.push({f: testClient.malformedSessionReq, a: [cbLoc]});
+			calls.push({f: testClient.malformedSessionReqNonBase64, a: [cbLoc]});
+		}
+
+		chainAsyncFunctions(calls, N);
 	}
-
-
-
 }
 
 function doTestCase(){
