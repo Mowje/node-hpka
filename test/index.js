@@ -13,7 +13,14 @@ var testServer = require('./testServer');
 
 var cbLoc = '#cbhere#';
 
-var yell = process.argv.length > 2 && process.argv[2] == 'verbose';
+var yell = false;
+var chosenAlgorithms = [];
+
+for (var i = 2; i < process.argv.length; i++){
+	var currentParam = process.argv[i];
+	if (currentParam == 'verbose') yell = true;
+	else if (currentParam == 'ecdsa' || currentParam == 'dsa' || currentParam == 'rsa' || currentParam == 'ed25519') chosenAlgorithms.push(currentParam);
+}
 
 var serverSettings = {
 	hostname: 'localhost',
@@ -22,7 +29,9 @@ var serverSettings = {
 	path: '/'
 };
 
-var availableAlgos = hpka.supportedAlgorithms();
+var availableAlgos = chosenAlgorithms.length > 0 ? chosenAlgorithms : hpka.supportedAlgorithms();
+
+log('\nTesting the following HPKA with the following algorithms: ' + JSON.stringify(availableAlgos) + '\n');
 
 var testCases = [];
 var testCaseIndex = 0;

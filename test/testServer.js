@@ -16,6 +16,12 @@ var applicationToUse;
 var userList = {};
 var sessions = {};
 
+var yell = false;
+
+function log(m){
+	if (yell) console.log(m);
+}
+
 /*
 * Useful function for the server
 */
@@ -335,4 +341,8 @@ exports.setMaxSessionLife = function(ttl){
 
 exports.getMaxSessionLife = function(){
 	return maxSessionLife;
+};
+
+exports.setYell = function(_y){
+	yell = _y;
 };

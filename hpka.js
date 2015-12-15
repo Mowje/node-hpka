@@ -348,6 +348,7 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 	//console.log('Parsed req : ' + JSON.stringify(req));
 	//console.log('Verfying signature');
 	var signedBlob = appendHostAndPathFromReq(reqBlob, httpReq);
+	//console.log('sent signedBlob: ' + signedBlob.toString('utf8'));
 	/*if (req.keyType == 'ed25519'){
 		console.log('reqBlob\n' + (new Buffer(reqBlob, 'base64')).toString('hex'));
 		console.log('signedBlob\n' + signedBlob.toString('hex'));
@@ -361,21 +362,25 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 		console.log('url: ' + httpReq.url + '\nhostname: ' + httpReq.headers.hostname + '\nhost: ' + httpReq.headers.host);
 		process.exit(1);
 	}
-	//console.log('Blob to verify: ' + signedBlob.toString('utf8'));
-	if ((req.keyType == 'ecdsa' || req.keyType == 'rsa' || req.keyType == 'dsa') && !cryptopp){
+	var keyType = req.keyType;
+	if (!(keyType == 'ecdsa' || keyType == 'rsa' || keyType == 'dsa' || keyType == 'ed25519')){
+
+		throw new Error('Unknown key type');
+	}
+	//console.log('Blob to verify:\n' + signedBlob.toString('hex'));
+	if ((keyType == 'ecdsa' || keyType == 'rsa' || keyType == 'dsa') && !cryptopp){
 		req.err = 'ECDSA, RSA and DSA are not supported since cryptopp is not installed';
 		req.errcode = 12;
 		callback(true); //Even though the signature can't be verified. If callback(false) was called, the middleware will throw an "invalid signature" message to the client
 		return;
 	}
-	if (req.keyType == 'ed25519' && !sodium){
+	if (keyType == 'ed25519' && !sodium){
 		req.err = 'Ed25519 are not supported since sodium is not installed';
 		req.errcode = 12;
 		callback(true); //Even though the signature can't be verified. If callback(false) was called, the middleware will throw an "invalid signature" message to the client
 		return;
 	}
 
-	var keyType = req.keyType;
 	var keyOptions;
 	if (keyType == 'ecdsa'){
 		keyOptions = req.curveName;
@@ -385,37 +390,45 @@ var verifySignatureWithoutProcessing = function(req, reqBlob, httpReq, signature
 		keyOptions = req.primeField;
 	}
 
-	if (!isValidSigLength(signature, keyType, keyOptions)){
-		//console.log('Invalid signature length detected');
+	/*if (!isValidSigLength(signature, keyType, keyOptions)){
 		callback(false);
 		return;
-	}
-
-	if (req.keyType == 'ecdsa'){
-		if (req.curveName.indexOf('secp') > -1){ //Checking is the curve is a prime field one
-			var isValid = cryptopp.ecdsa.prime.verify(signedBlob.toString('hex'), (new Buffer(signature, 'base64')).toString('hex'), req.point, req.curveName, 'sha1');
+	}*/
+	try {
+		if (req.keyType == 'ecdsa'){
+			if (req.curveName.indexOf('secp') > -1){ //Checking is the curve is a prime field one
+				var isValid = cryptopp.ecdsa.prime.verify(signedBlob.toString('utf8'), (new Buffer(signature, 'base64')).toString('hex'), req.point, req.curveName, 'sha1');
+				//console.log('isValid: ' + isValid);
+				callback(isValid);
+			} else if (req.curveName.indexOf('sect') > -1){ //Binary curves aren't supported in ECDSA on binary fields in the node-cryptopp binding lib v0.1.2
+				throw new TypeError("Unsupported curve type. See cryptopp README page");
+			} else throw new TypeError("Unknown curve type");
+		} else if (req.keyType == 'rsa'){
+			//console.log('RSA sig length: ' + signedBlob.length);
+			signedBlob = signedBlob.toString('utf8');
+			var isValid = cryptopp.rsa.verify(signedBlob, (new Buffer(signature, 'base64')).toString('hex'), req.modulus, req.publicExponent);
+			//console.log('verifySignatureWithoutProcessing isValid: ' + isValid);
 			callback(isValid);
-		} else if (req.curveName.indexOf('sect') > -1){ //Binary curves aren't supported in ECDSA on binary fields in the node-cryptopp binding lib v0.1.2
-			throw new TypeError("Unsupported curve type. See cryptopp README page");
-		} else throw new TypeError("Unknown curve type");
-	} else if (req.keyType == 'rsa'){
-		var isValid = cryptopp.rsa.verify(signedBlob.toString('hex'), (new Buffer(signature, 'base64')).toString('hex'), req.modulus, req.publicExponent, undefined);
-		callback(isValid);
-	} else if (req.keyType == 'dsa'){
-		var isValid = cryptopp.dsa.verify(signedBlob.toString('hex'), (new Buffer(signature, 'base64')).toString('hex'), req.primeField, req.divider, req.base, req.publicElement);
-		callback(isValid)
-	} else if (req.keyType == 'ed25519'){
-		if (Buffer.byteLength(signature, 'base64') != 64){
-			callback(false);
-			return;
+		} else if (req.keyType == 'dsa'){
+			var isValid = cryptopp.dsa.verify(signedBlob.toString('utf8'), (new Buffer(signature, 'base64')).toString('hex'), req.primeField, req.divider, req.base, req.publicElement);
+			//console.log('isValid: ' + isValid);
+			callback(isValid)
+		} else if (req.keyType == 'ed25519'){
+			if (Buffer.byteLength(signature, 'base64') != 64){
+				callback(false);
+				return;
+			}
+			var isValid = sodium.api.crypto_sign_verify_detached(new Buffer(signature, 'base64'), signedBlob, new Buffer(req.publicKey, 'hex'));
+			//console.log('verifySignatureWithoutProcessing isValid: ' + isValid);
+			callback(isValid);
+			/*if (typeof signedMessage === 'undefined') {callback(false); return;}
+			//Note: the signed message is a Base64 encoded string, hence the content of signedMessage buffer is the "already encoded" base64 string.
+			if (signedMessage.toString('ascii') == reqBlob) callback(true);
+			else callback(false);*/
 		}
-		var isValid = sodium.api.crypto_sign_verify_detached(new Buffer(signature, 'base64'), signedBlob, new Buffer(req.publicKey, 'hex'));
-		callback(isValid);
-		/*if (typeof signedMessage === 'undefined') {callback(false); return;}
-		//Note: the signed message is a Base64 encoded string, hence the content of signedMessage buffer is the "already encoded" base64 string.
-		if (signedMessage.toString('ascii') == reqBlob) callback(true);
-		else callback(false);*/
-	} else throw new TypeError("Unknown key type");
+	} catch (e){
+		callback(false);
+	}
 };
 
 //External / out-of-context signature validation. Note: reqUrl must be a full URL (with protocol and everything)
@@ -436,7 +449,6 @@ var verifySignature = function(reqBlob, signature, reqUrl, method, callback){
 	}
 	var reqUrlStr = reqUrl.toString('utf8'); //Start after the first byte (being the verbId);
 	var parsedUrl = url.parse(reqUrlStr);
-	console.log('parsedUrl.path: ' + parsedUrl.path);
 	var httpReqMimic = {
 		headers: {
 			host: parsedUrl.hostname || parsedUrl.host
@@ -1577,6 +1589,7 @@ function buildPayload(keyRing, username, actionType, hostnameAndPath, verb, call
 		var signedMessage = new Buffer(signedMessageLength);
 		req.copy(signedMessage);
 		signedMessage[reqByteLength] = getVerbId(verb);
+		//console.log('Sent hostAndPath: ' + hostnameAndPath);
 		signedMessage.write(hostnameAndPath, reqByteLength + 1);
 		//console.log('Signed payload:\n' + signedMessage.toString('hex'));
 		var pubKey = keyRing.publicKeyInfo();
@@ -1685,10 +1698,11 @@ function appendHostAndPathFromReq(reqBlob, httpReq, encoding){
 	if (!(typeof reqBlob == 'string' || Buffer.isBuffer(reqBlob))) throw new TypeError('reqBlob must either be a string or an object');
 	if (typeof httpReq != 'object') throw new TypeError('httpReq must be an object');
 	if (encoding && typeof encoding != 'string') throw new TypeError('When defined, encoding must be a string');
-	var host = httpReq.headers.hostname || httpReq.headers.host.replace(/:\d+/, '');
+	var host = /*httpReq.headers.hostname ||*/ httpReq.headers.host.replace(/:\d+/, '');
 	if (!host) return undefined;
 	var path = httpReq.url;
 	var hostAndPath = host + path;
+	//console.log('Received hostAndPath: ' + hostAndPath);
 	var hostAndPathLength = Buffer.byteLength(hostAndPath, 'utf8') + 1; //The additional byte is for the verbID
 	var reqBuffer;
 	if (!Buffer.isBuffer(reqBlob)){

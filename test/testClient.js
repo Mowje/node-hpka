@@ -126,7 +126,7 @@ exports.setKeyType = function(_keyType){
 		}
 	}
 
-	if (!availKeyType) throw new Error(_keyType + ' is not supported (sodium ro cryptopp is missing)');
+	if (!availKeyType) throw new Error(_keyType + ' is not supported (sodium or cryptopp is missing)');
 
 	keyType = _keyType;
 };
