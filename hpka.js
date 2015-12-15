@@ -29,6 +29,16 @@ var url = require('fast-url-parser');
 
 var absMaxForSessionTTL = 45 * 365.25 * 24 * 3600; //1/1/2015 00:00:00 UTC, in seconds. A threshold just helping us determine whether the provided wantedSessionExpiration is a TTL or a timestamp
 
+function showCriticalError(m){
+	console.error('');
+	console.error('------------------------------------------------------------');
+	console.error('');
+	console.error(m);
+	console.error('');
+	console.error('------------------------------------------------------------');
+	console.error('');
+}
+
 exports.supportedAlgorithms = function(){
 	var algos = [];
 	if (cryptopp){
@@ -471,6 +481,7 @@ exports.verifySignature = verifySignature;
 	deletion: function(HPKAReq, res),
 	keyRotation: function(HPKAReq, RotationReq, res),
 	strict: boolean,
+	sessionCheck: function(SessionReq, req, res, callback(isValid))
 	sessionAgreement: function(HPKAReq, req, callback(accepted, serverSetExpiration)),
 	sessionRevocation: function(HPKAReq, req, callback(revoked))
 }
@@ -503,6 +514,14 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 					}
 					return;
 				}
+
+				if (HPKAReq.keyType == 'ecdsa' || HPKAReq.keyType == 'rsa' || HPKAReq.keyType == 'dsa'){
+					showCriticalError('Crypto++ support has been disabled in this version of node-hpka, until node-cryptopp is fixed');
+					res.status(445).set('HPKA-Error', '12');
+					res.send('Forbidden key type');
+					return;
+				}
+
 				try {
 					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, req, HPKASignature, function(isValid){
 						if (isValid){
@@ -736,6 +755,13 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 					}
 					return;
 				}
+
+				if (HPKAReq.keyType == 'ecdsa' || HPKAReq.keyType == 'rsa' || HPKAReq.keyType == 'dsa'){
+					showCriticalError('Crypto++ support has been disabled in this version of node-hpka, until node-cryptopp is fixed');
+					writeErrorRes(res, 'Forbidden key type', 12);
+					return;
+				}
+
 				//Checking the signature then calling the handlers according to the actionType
 				try {
 					verifySignatureWithoutProcessing(HPKAReq, HPKAReqBlob, req, HPKASignature, function(isValid){
