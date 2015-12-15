@@ -1,0 +1,11 @@
+before_script:
+  - "npm install git+https://github.com/Mowje/node-sodium.git#v1.1.4"
+  - "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/node_modules/sodium/libsodium/src/libsodium/.libs/"
+  - "export LD_RUN_PATH=$LD_RUN_PATH:$(pwd)/node_modules/sodium/libsodium/src/libsodium/.libs/"
+
+stages:
+  - test
+
+check:
+  script: "node test/index.js ed25519 verbose"
+  stages: test
