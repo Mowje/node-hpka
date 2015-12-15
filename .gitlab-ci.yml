@@ -8,4 +8,4 @@ stages:
 
 check:
   script: "node test/index.js ed25519 verbose"
-  stages: test
+  stage: test
