@@ -18,7 +18,12 @@ try {
 
 }
 
-if (!(sodium || cryptopp)) throw new TypeError('No sodium or cryptopp modules found. At least one of them must be installed');
+if (!(sodium || cryptopp)) throw new Error('No sodium or cryptopp modules found. At least one of them must be installed');
+
+//Temporary constraint in v0.3
+if (!sodium && cryptopp){
+	throw new Error('In this version, node-cryptopp support has been disabled (because this module this not ready for actual use)');
+}
 
 var assert = require('assert');
 var fs = require('fs');
@@ -274,6 +279,8 @@ var processReqBlob = function(pubKeyBlob){
 
 		req.publicKey = publicKey;
 	} else throw new TypeError('Unknown key type');
+
+	//Session agreement and revocation cases
 	if (actionType == 0x04 || actionType == 0x05){ //Session-id agreement or revocation
 		var sessionIdLength, sessionId;
 		//Reading the sessionId's length
@@ -1342,7 +1349,7 @@ exports.client = function(keyFilename, usernameVal, password, allowGetSessions){
 				wantedSessionExpiration += tNow;
 			}
 			if (wantedSessionExpiration != 0){//When a session life is defined, assert that the value is in the future
-				assert(wantedSessionExpiration > tNow, 'Internal value');
+				assert(wantedSessionExpiration > tNow, 'Internal error');
 			}
 		}
 
@@ -1489,7 +1496,6 @@ function buildPayloadWithoutSignature(keyRing, username, actionType, callback, e
 		//Add wantedSessionExpiration if provided and actionType == 0x04
 		if (actionType == 0x04 && sessionExpiration) bufferLength += 8;
 	}
-	//bufferLength += 10; //The 10 random bytes appended to the end of the payload; augments signature's entropy
 	//Building the payload
 	//console.log('Req payload length : ' + bufferLength);
 	var buffer = new Buffer(bufferLength);
