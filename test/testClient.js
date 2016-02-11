@@ -553,8 +553,8 @@ exports.malformedReqNonBase64 = function(cb, strictMode){
 		method: serverSettings.method,
 		port: serverSettings.port,
 		headers: {
-			'HPKA-Req': fakeHPKAReq,
-			'HPKA-Signature': fakeSig
+			'HPKA-Req': encodeURIComponent(fakeHPKAReq),
+			'HPKA-Signature': encodeURIComponent(fakeSig)
 		}
 	};
 
@@ -628,7 +628,7 @@ exports.malformedSessionReqNonBase64 = function(cb, strictMode){
 		method: serverSettings.method,
 		path: serverSettings.path,
 		headers: {
-			'HPKA-Session': sessionStr
+			'HPKA-Session': encodeURIComponent(sessionStr)
 		}
 	}
 
