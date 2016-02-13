@@ -174,7 +174,7 @@ var processReqBlob = function(pubKeyBlob){
 	//Reading the version number
 	var versionNumber = buf[byteIndex];
 	if (versionNumber != 0x01){
-		throw new RangeError('Unsupported protocol version');
+		throw new RangeError('PROTOCOL_VERSION');
 	}
 	byteIndex++;
 	//Reading the timestamp
@@ -332,7 +332,7 @@ function processSessionBlob(sessionBlob){
 	var versionNumber = sessionBuf[byteIndex];
 	byteIndex++;
 	if (versionNumber != 0x01){
-		throw new RangeError('Unsupported protocol version');
+		throw new RangeError('PROTOCOL_VERSION');
 	}
 	//Reading username length
 	var usernameLength = sessionBuf[byteIndex];
@@ -520,8 +520,13 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 				} catch (e){
 					console.log('HPKA-Req parsing issue; e : ' + e);
 					if (strict){
-						res.status(445).set('HPKA-Error', '1');
-						res.send('Malformed HPKA request');
+						if (e.message == 'PROTOCOL_VERSION'){
+							res.status(445).set('HPKA-Error', '0');
+							res.send('Unsupported protocol version');
+						} else {
+							res.status(445).set('HPKA-Error', '1');
+							res.send('Malformed HPKA request');
+						}
 					} else {
 						next();
 					}
@@ -691,8 +696,13 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 				//console.log('Parsed session req: ' + JSON.stringify(sessionReq));
 			} catch (e){
 				if (strict){
-					res.status(445).set('HPKA-Error', '1');
-					res.send('Malformed request');
+					if (e.message == 'PROTOCOL_VERSION'){
+						res.status(445).set('HPKA-Error', '0');
+						res.send('Unsupported protocol version');
+					} else {
+						res.status(445).set('HPKA-Error', '1');
+						res.send('Malformed request');
+					}
 				} else {
 					next();
 				}
@@ -762,8 +772,12 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 					HPKAReq = processReqBlob(HPKAReqBlob);
 				} catch (e){
 					if (strict){
-						console.log('parsing error, e : ' + e);
-						writeErrorRes(res, 'Malformed HPKA request', 1);
+						if (e.message == 'PROTOCOL_VERSION'){
+							writeErrorRes(res, 'Unsupported protocol version', 0);
+						} else {
+							console.log('parsing error, e : ' + e);
+							writeErrorRes(res, 'Malformed HPKA request', 1);
+						}
 					} else {
 						requestHandler(req, res);
 					}
@@ -900,7 +914,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 						}
 					});
 				} catch (e){
-					throw e;
+					//throw e;
 					console.log('error : ' + e);
 					if (strict){
 						writeErrorRes(res, 'Invalid signature', 2);
@@ -922,7 +936,11 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 				//console.log('Parsed session req: ' + JSON.stringify(sessionReq));
 			} catch (e){
 				if (strict){
-					writeErrorRes(res, 'Malformed request', 1);
+					if (e.message == 'PROTOCOL_VERSION'){
+						writeErrorRes(res, 'Unsupported protocol version', 0);
+					} else {
+						writeErrorRes(res, 'Malformed request', 1);
+					}
 				} else {
 					next();
 				}

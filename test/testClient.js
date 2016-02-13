@@ -109,6 +109,7 @@ function isFunction(f){
 }
 
 function equalToOne(val, matchingArray){
+	if (!(Array.isArray(matchingArray) && matchingArray.length > 0)) return val == matchingArray;
 	for (var i = 0; i < matchingArray.length; i++) if (matchingArray[i] == val) return true;
 	return false;
 }
@@ -496,9 +497,9 @@ exports.spoofedSessionReq = function(withUsername, cb, strictMode){
 exports.malformedReq = function(cb, strictMode){
 	if (typeof cb != 'function') throw new TypeError('cb must be a function');
 
-	var expectedBody = 'Malformed HPKA request';
+	var expectedBody = ['Unsupported protocol version', 'Malformed HPKA request'];
 	var expectedStatusCode = strictMode ? 445 : 200;
-	var expectedHPKAErrValue = strictMode ? '1' : null;
+	var expectedHPKAErrValue = strictMode ? ['0', '1'] : null;
 
 	//Generate a random HPKA Req string, between 1 and 256 bytes long, to base64
 	var fakeHPKAReq = crypto.randomBytes(crypto.randomBytes(1)[0]+1).toString('base64');
@@ -523,10 +524,10 @@ exports.malformedReq = function(cb, strictMode){
 		assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code on malformed request: ' + res.statusCode);
 
 		if (strictMode){
-			assert.equal(body, expectedBody, 'Unexpected body on malformed request: ' + body);
-			if (expectedHPKAErrValue) assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code on malformed request: ' + res.headers['hpka-error']);
+			assert(equalToOne(body, expectedBody), 'Unexpected body on malformed request: ' + body);
+			if (expectedHPKAErrValue) assert(equalToOne(res.headers['hpka-error'], expectedHPKAErrValue), 'Unexpected HPKA error code on malformed request: ' + res.headers['hpka-error']);
 		} else {
-			assert.notEqual(body, expectedBody, 'Unexpected body on malformed request (non-strict mode): ' + body);
+			assert.notEqual(equalToOne(body, expectedBody), true, 'Unexpected body on malformed request (non-strict mode): ' + body);
 		}
 
 		cb();
@@ -537,9 +538,9 @@ exports.malformedReq = function(cb, strictMode){
 exports.malformedReqNonBase64 = function(cb, strictMode){
 	if (typeof cb != 'function') throw new TypeError('cb must be a function');
 
-	var expectedBody = 'Malformed HPKA request';
+	var expectedBody = ['Unsupported protocol version', 'Malformed HPKA request'];
 	var expectedStatusCode = strictMode ? 445 : 200;
-	var expectedHPKAErrValue = strictMode ? '1' : null;
+	var expectedHPKAErrValue = strictMode ? ['0', '1'] : null;
 
 	//Generate a random HPKA Req string, between 1 and 256 bytes long, to base64
 	var fakeHPKAReq = crypto.randomBytes(crypto.randomBytes(1)[0]+1).toString('utf8');
@@ -553,8 +554,8 @@ exports.malformedReqNonBase64 = function(cb, strictMode){
 		method: serverSettings.method,
 		port: serverSettings.port,
 		headers: {
-			'HPKA-Req': encodeURIComponent(fakeHPKAReq),
-			'HPKA-Signature': encodeURIComponent(fakeSig)
+			'HPKA-Req': encodeURI(fakeHPKAReq),
+			'HPKA-Signature': encodeURI(fakeSig)
 		}
 	};
 
@@ -564,10 +565,10 @@ exports.malformedReqNonBase64 = function(cb, strictMode){
 		assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code on malformed request : ' + res.statusCode);
 
 		if (strictMode){
-			assert.equal(body, expectedBody, 'Unexpected body on malformed request: ' + body);
-			if (expectedHPKAErrValue) assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code on malformed request: ' + res.headers['hpka-error']);
+			assert(equalToOne(body, expectedBody), 'Unexpected body on malformed request: ' + body);
+			if (expectedHPKAErrValue) assert(equalToOne(res.headers['hpka-error'], expectedHPKAErrValue), 'Unexpected HPKA error code on malformed request: ' + res.headers['hpka-error']);
 		} else {
-			assert.notEqual(body, expectedBody, 'Unexpected body on malformed request (non-strict mode): ' + body);
+			assert.notEqual(equalToOne(body, expectedBody), true, 'Unexpected body on malformed request (non-strict mode): ' + body);
 		}
 
 		cb();
@@ -581,9 +582,9 @@ exports.malformedSessionReq = function(cb, strictMode){
 	//Generate 1 to 256 bytes of random data, to base64
 	var sessionStr = crypto.randomBytes(crypto.randomBytes(1)[0] + 1).toString('base64');
 
-	var expectedBody = strictMode ? ['Malformed request', 'Invalid token'] : 'Anonymous user';
+	var expectedBody = strictMode ? ['Unsupported protocol version', 'Malformed request', 'Invalid token'] : 'Anonymous user';
 	var expectedStatusCode = strictMode ? 445 : 200;
-	var expectedHPKAErrValue = ['1', '2'];
+	var expectedHPKAErrValue = ['0', '1', '2'];
 
 	var reqOptions = {
 		hostname: serverSettings.hostname,
@@ -617,9 +618,9 @@ exports.malformedSessionReqNonBase64 = function(cb, strictMode){
 	//Generate 1 to 256 bytes of random data, to base64
 	var sessionStr = crypto.randomBytes(crypto.randomBytes(1)[0] + 1).toString('utf8');
 
-	var expectedBody = strictMode ? 'Malformed request' : 'Anonymous user';
+	var expectedBody = strictMode ? ['Unsupported protocol version', 'Malformed request'] : 'Anonymous user';
 	var expectedStatusCode = strictMode ? 445 : 200;
-	var expectedHPKAErrValue = '1';
+	var expectedHPKAErrValue = ['0', '1'];
 
 	var reqOptions = {
 		hostname: serverSettings.hostname,
@@ -628,7 +629,7 @@ exports.malformedSessionReqNonBase64 = function(cb, strictMode){
 		method: serverSettings.method,
 		path: serverSettings.path,
 		headers: {
-			'HPKA-Session': encodeURIComponent(sessionStr)
+			'HPKA-Session': encodeURI(sessionStr)
 		}
 	}
 
@@ -636,8 +637,8 @@ exports.malformedSessionReqNonBase64 = function(cb, strictMode){
 		if (err) throw err;
 
 		assert.equal(res.statusCode, expectedStatusCode, 'Unexpected status code on malformed session request: ' + res.statusCode);
-		assert.equal(body, expectedBody, 'Unexpected body on malformed session request: ' + body);
-		if (strictMode) assert.equal(res.headers['hpka-error'], expectedHPKAErrValue, 'Unexpected HPKA error code: ' + res.headers['hpka-error']);
+		assert(equalToOne(body, expectedBody), 'Unexpected body on malformed session request: ' + body);
+		if (strictMode) assert(equalToOne(res.headers['hpka-error'], expectedHPKAErrValue), 'Unexpected HPKA error code: ' + res.headers['hpka-error']);
 
 		cb();
 	});
