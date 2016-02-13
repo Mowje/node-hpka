@@ -1,7 +1,7 @@
 # node-hpka
 ------------------------------------------------------------
 
-A [Node.js](http://nodejs.org) implementation of the [HPKA protocol](https://github.com/Mowje/hpka). Acts as an [expressjs](https://github.com/visionmedia/express) middleware or standard [HTTP](http://nodejs.org/api/http.html)/[HTTPS](http://nodejs.org/api/https.html) middlware. It also has an HPKA client object.
+A [Node.js](http://nodejs.org) implementation of the [HPKA protocol](https://github.com/Mowje/hpka). Acts as an [expressjs](https://github.com/visionmedia/express) middleware or standard [HTTP](http://nodejs.org/api/http.html)/[HTTPS](http://nodejs.org/api/https.html) middleware. It also has an HPKA client object.
 
 ## Installation
 
