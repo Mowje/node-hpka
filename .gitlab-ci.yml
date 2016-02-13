@@ -10,6 +10,8 @@ stages:
 checkv0_10:
   script: "node test/index.js ed25519 verbose"
   stage: test
+  tags:
+    - v0_10
 
 checkv5:
   script: "node test/index.js ed25519 verbose"
