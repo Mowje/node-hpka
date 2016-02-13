@@ -173,6 +173,9 @@ var processReqBlob = function(pubKeyBlob){
 	var byteIndex = 0;
 	//Reading the version number
 	var versionNumber = buf[byteIndex];
+	if (versionNumber != 0x01){
+		throw new RangeError('Unsupported protocol version');
+	}
 	byteIndex++;
 	//Reading the timestamp
 	var timestampLeft, timestampRight;
@@ -328,6 +331,9 @@ function processSessionBlob(sessionBlob){
 	//Reading the version number
 	var versionNumber = sessionBuf[byteIndex];
 	byteIndex++;
+	if (versionNumber != 0x01){
+		throw new RangeError('Unsupported protocol version');
+	}
 	//Reading username length
 	var usernameLength = sessionBuf[byteIndex];
 	byteIndex++;
@@ -682,6 +688,7 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 			var sessionReq;
 			try {
 				sessionReq = processSessionBlob(sessionBlob);
+				//console.log('Parsed session req: ' + JSON.stringify(sessionReq));
 			} catch (e){
 				if (strict){
 					res.status(445).set('HPKA-Error', '1');
@@ -912,6 +919,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 			var sessionReq;
 			try {
 				sessionReq = processSessionBlob(sessionBlob);
+				//console.log('Parsed session req: ' + JSON.stringify(sessionReq));
 			} catch (e){
 				if (strict){
 					writeErrorRes(res, 'Malformed request', 1);
