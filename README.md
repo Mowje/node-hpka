@@ -211,6 +211,11 @@ Build (asynchronously) a client HPKA payload with the given parameters:
 * httpVerb : the HTTP verb used in the request (as a string). Most common ones are : 'get', 'post', 'put', 'delete'
 * callback : a function, that will recieve as parameters the (req, signature) encoded duplet (for the HPKA-Req and HPKA-Signature headers respectively)
 
+### Utility methods
+
+* hpka.publicKeyUtils.getPublicKeyFromHPKAReq(HPKAReq req) : extract public key information from a given HPKAReq instance, returning an object
+* hpka.publicKeyUtils.checkPublicKeyEquality(pk1, pk2) : returning a boolean indicating whether the public key information contained in pk1 and pk2 are identical
+
 ## Using the client with Tor (or any SOCKS5 proxy server)
 
 I see 2 ways of doing this:
@@ -222,8 +227,10 @@ Note also that if you want to host a server with HPKA behind a hidden service, y
 
 ## HPKAReq object
 
-The HPKAReq object is the result of parsing the [HPKA-Req field](https://github.com/Mowje/hpka#hpka-req-protocol). I will list here its attributes :
+The HPKAReq object is the result of parsing the [HPKA-Req field](https://github.com/Mowje/hpka#hpka-req-protocol). I will list here its attributes and methods:
 
+* Object getPublicKey() : method returning the contained public key information
+* Boolean checkPublicKeyEqualityWith(otherPublicKey) : method returning whether the public key information is equal to a given public key object (meaning: an object as returned by the getPublicKey method)
 * username: a string
 * actionType : a number, as defined in the spec
 * timeStamp : the date&time at which the payload was built and signed. UTC Unix Epoch (number of **seconds** since 1-1-1970 00:00:00 UTC)
