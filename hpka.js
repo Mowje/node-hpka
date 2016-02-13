@@ -40,13 +40,9 @@ exports.publicKeyUtils = publicKeyUtils;
 var absMaxForSessionTTL = 45 * 365.25 * 24 * 3600; //1/1/2015 00:00:00 UTC, in seconds. A threshold just helping us determine whether the provided wantedSessionExpiration is a TTL or a timestamp
 
 function showCriticalError(m){
-	console.error('');
-	console.error('------------------------------------------------------------');
-	console.error('');
+	console.error('\n------------------------------------------------------------\n');
 	console.error(m);
-	console.error('');
-	console.error('------------------------------------------------------------');
-	console.error('');
+	console.error('\n------------------------------------------------------------\n');
 }
 
 exports.supportedAlgorithms = function(){
