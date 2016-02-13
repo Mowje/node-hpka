@@ -32,6 +32,11 @@ var http = require('http');
 var https = require('https');
 var url = require('fast-url-parser');
 
+var _HPKAReq = require('./HPKAReq');
+var publicKeyUtils = require('./publicKeyUtils');
+
+exports.publicKeyUtils = publicKeyUtils;
+
 var absMaxForSessionTTL = 45 * 365.25 * 24 * 3600; //1/1/2015 00:00:00 UTC, in seconds. A threshold just helping us determine whether the provided wantedSessionExpiration is a TTL or a timestamp
 
 function showCriticalError(m){
@@ -296,6 +301,13 @@ var processReqBlob = function(pubKeyBlob){
 		req.sessionId = sessionId;
 
 		if (actionType == 0x04){
+			/*
+			If it's a session agreement request,
+			an expiration date for the sessionId
+			may be optionally provided, in which
+			case this method should parse it and
+			add it to the returned HPKAReq object
+			*/
 			//Calc remaining bytes
 			var rem = remainingBytes();
 			if (rem != 8) return req;
@@ -312,7 +324,7 @@ var processReqBlob = function(pubKeyBlob){
 			req.sessionExpiration = expirationTimestamp;
 		}
 	}
-	return req;
+	return new _HPKAReq(req);
 
 	function remainingBytes(){
 		return buf.length - byteIndex;
