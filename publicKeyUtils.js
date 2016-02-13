@@ -37,25 +37,28 @@ exports.getPublicKeyFromHPKAReq = function(HPKAReq){
 */
 exports.checkPublicKeyEquality = function(pk1, pk2){
 	if (!(typeof pk1 == 'object' && typeof pk2 == 'object')) throw new TypeError('Parameters must be objects');
-	if (pk1.keyType != pk2.keyType) return false;
-	if (pk1.keyType == "ecdsa"){
+	if (pk1.keyType.toLowerCase() != pk2.keyType.toLowerCase()) return false;
+
+	var pkType = pk1.keyType.toLowerCase();
+
+	if (pkType == "ecdsa"){
 		//console.log('Common type : ecdsa');
-		if (pk1.curveName != pk2.curveName) return false;
-		if (pk1.point.x != pk2.point.x) return false;
-		if (pk1.point.y != pk2.point.y) return false;
-	} else if (pk1.keyType == "rsa"){
+		if (pk1.curveName.toLowerCase() != pk2.curveName.toLowerCase()) return false;
+		if (pk1.point.x.toLowerCase() != pk2.point.x.toLowerCase()) return false;
+		if (pk1.point.y.toLowerCase() != pk2.point.y.toLowerCase()) return false;
+	} else if (pkType == "rsa"){
 		//console.log('Common type : rsa');
-		if (pk1.modulus != pk2.modulus) return false;
-		if (pk1.publicExponent != pk2.publicExponent) return false;
-	} else if (pk1.keyType == "dsa"){
+		if (pk1.modulus.toLowerCase() != pk2.modulus.toLowerCase()) return false;
+		if (pk1.publicExponent.toLowerCase() != pk2.publicExponent.toLowerCase()) return false;
+	} else if (pkType == "dsa"){
 		//console.log('Common type : dsa');
-		if (pk1.primeField != pk2.primeField) return false;
-		if (pk1.divider != pk2.divider) return false;
-		if (pk1.base != pk2.base) return false;
-		if (pk1.publicElement != pk2.publicElement) return false;
-	} else if (pk1.keyType == 'ed25519'){
+		if (pk1.primeField.toLowerCase() != pk2.primeField.toLowerCase()) return false;
+		if (pk1.divider.toLowerCase() != pk2.divider.toLowerCase()) return false;
+		if (pk1.base.toLowerCase() != pk2.base.toLowerCase()) return false;
+		if (pk1.publicElement.toLowerCase() != pk2.publicElement.toLowerCase()) return false;
+	} else if (pkType == 'ed25519'){
 		//console.log('Common type : ed25519');
-		if (pk1.publicKey != pk2.publicKey) return false;
+		if (pk1.publicKey.toLowerCase() != pk2.publicKey.toLowerCase()) return false;
 	} else throw new TypeError('Invalid keyType');
 	return true;
 };
