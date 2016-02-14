@@ -306,7 +306,7 @@ var processReqBlob = function(pubKeyBlob){
 			*/
 			//Calc remaining bytes
 			var rem = remainingBytes();
-			if (rem != 8) return req;
+			if (rem != 8) return new _HPKAReq(req);
 			//Extract timestamp
 			var expLeft = buf.readUInt32BE(byteIndex);
 			byteIndex += 4;
