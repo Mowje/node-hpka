@@ -232,6 +232,7 @@ The HPKAReq object is the result of parsing the [HPKA-Req field](https://github.
 * Object getPublicKey() : method returning the contained public key information
 * Boolean checkPublicKeyEqualityWith(otherPublicKey) : method returning whether the public key information is equal to a given public key object (meaning: an object as returned by the getPublicKey method)
 * username: a string
+* usernameBuffer : a buffer
 * actionType : a number, as defined in the spec
 * timeStamp : the date&time at which the payload was built and signed. UTC Unix Epoch (number of **seconds** since 1-1-1970 00:00:00 UTC)
 * err : a string, defined only if an error occured. As of now, it is only defined if a request with an ECDSA, RSA or DSA key comes in and `cryptopp` is not insalled (Same thing for Ed25519 and `sodium` respectively)
@@ -251,7 +252,7 @@ The HPKAReq object is the result of parsing the [HPKA-Req field](https://github.
 	* publicElement : a hex string of the public DSA element
 * In case of keyType == "ed25519"
 	* publicKey : a hex encoded string of the public key
-* If actionType == 0x04 (session agreement) or actionType == 0x05 (session revocation), a `sessionId` string is available (namely, the session identifier the user wants to create or revoke)
+* If actionType == 0x04 (session agreement) or actionType == 0x05 (session revocation), a `sessionId` string is available (namely, the session identifier the user wants to create or revoke), as well as a `sessionIdBuffer` buffer
 * If actionType == 0x04 (session agreement), a `sessionExpiration` attribute may be available. If it is available, like `timeStamp`, it also is a UTC Unix Epoch (in seconds).
 
 ## SessionReq object
@@ -259,8 +260,10 @@ The HPKAReq object is the result of parsing the [HPKA-Req field](https://github.
 The SessionReq object is the result of parsing the [HPKA-Session field](https://github.com/Mowje/hpka#hpka-session-protocol). Here its attributes:
 
 * username: a string
+* usernameBuffer : the slice of the request buffer containing the username
 * timestamp: the date&time at which the payload was built. UTC Unix Epoch (number of **seconds** since 1-1-1970 00:00:00 UTC)
 * sessionId: a user-provided, agreed-upon, string used as session identifier
+* sessionIdBuffer : the slice of the request buffer containing the sessionId
 
 ## Example
 
