@@ -199,6 +199,7 @@ var processReqBlob = function(pubKeyBlob){
 	byteIndex++;
 	//Reading the username
 	var username = buf.toString('utf8', byteIndex,  byteIndex + usernameLength);
+	var usernameBuf = buf.slice(byteIndex, byteIndex + usernameLength);
 	byteIndex += usernameLength;
 	//Reading the action type
 	var actionType = buf[byteIndex];
@@ -212,6 +213,7 @@ var processReqBlob = function(pubKeyBlob){
 	//Initializing the result object
 	var req = {};
 	req.username = username;
+	req.usernameBuffer = usernameBuf;
 	req.actionType = actionType;
 	req.timeStamp = timeStamp;
 	//var byteIndex = 4;
@@ -286,15 +288,17 @@ var processReqBlob = function(pubKeyBlob){
 
 	//Session agreement and revocation cases
 	if (actionType == 0x04 || actionType == 0x05){ //Session-id agreement or revocation
-		var sessionIdLength, sessionId;
+		var sessionIdLength, sessionId, sessionIdBuf;
 		//Reading the sessionId's length
 		sessionIdLength = buf[byteIndex];
 		byteIndex++;
 		//Reading the sessionId
 		sessionId = buf.toString('utf8', byteIndex, byteIndex + sessionIdLength);
+		sessionIdBuf = buf.slice(byteIndex, byteIndex + sessionIdLength);
 		byteIndex += sessionIdLength;
 
 		req.sessionId = sessionId;
+		req.sessionIdBuffer = sessionIdBuf;
 
 		if (actionType == 0x04){
 			/*
@@ -347,6 +351,7 @@ function processSessionBlob(sessionBlob){
 	byteIndex++;
 	//Reading username
 	var username = sessionBuf.toString('utf8', byteIndex, byteIndex + usernameLength);
+	var usernameBuf = sessionBuf.slice(byteIndex, byteIndex + usernameLength);
 	byteIndex += usernameLength;
 	//Reading timestamp
 	var timestampLeft, timestampRight;
@@ -362,9 +367,10 @@ function processSessionBlob(sessionBlob){
 	byteIndex++;
 	//Reading sessionId
 	var sessionId = sessionBuf.toString('utf8', byteIndex, byteIndex + sessionIdLength);
+	var sessionIdBuf = sessionBuf.slice(byteIndex, byteIndex + sessionIdLength);
 	byteIndex += sessionIdLength;
 
-	return {username: username, timestamp: timestamp, sessionId: sessionId};
+	return {username: username, usernameBuffer: usernameBuf, timestamp: timestamp, sessionId: sessionId, sessionIdBuffer: sessionIdBuf};
 }
 
 /*

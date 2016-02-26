@@ -96,7 +96,7 @@ function validHPKAErrorCode(n){
 	var nCopy = n;
 	if (typeof v == 'string') n = parseInt(n);
 	if (isNaN(n)) throw new TypeError('Invalid number : ' + nCopy);
-	var v = typeof n == 'number' && Math.floor(n) == n && n > 0 && n <= 16;
+	var v = typeof n == 'number' && Math.floor(n) == n && n >= 0 && n <= 16;
 	if (!v) throw new TypeError('Invalid error code : ' + nCopy);
 }
 
