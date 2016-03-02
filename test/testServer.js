@@ -161,7 +161,7 @@ var sessionCheck = function(SessionReq, req, res, callback){
 	callback(validId);
 };
 
-var sessionAgreement = function(HPKAReq, req, callback){
+var sessionAgreement = function(HPKAReq, req, res, callback){
 	var username = HPKAReq.username;
 	var sessionId = HPKAReq.sessionId;
 	//Expiration date agreement
@@ -192,7 +192,7 @@ var sessionAgreement = function(HPKAReq, req, callback){
 	} else callback(false);
 };
 
-var sessionRevocation = function(HPKAReq, req, callback){
+var sessionRevocation = function(HPKAReq, req, res, callback){
 	var username = HPKAReq.username;
 	var sessionId = HPKAReq.sessionId;
 	//Checks keys

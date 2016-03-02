@@ -349,6 +349,9 @@ function processSessionBlob(sessionBlob){
 	//Reading username length
 	var usernameLength = sessionBuf[byteIndex];
 	byteIndex++;
+	if (usernameLength > remainingBytes()){
+		throw new Error('malformed session request');
+	}
 	//Reading username
 	var username = sessionBuf.toString('utf8', byteIndex, byteIndex + usernameLength);
 	var usernameBuf = sessionBuf.slice(byteIndex, byteIndex + usernameLength);
@@ -365,10 +368,17 @@ function processSessionBlob(sessionBlob){
 	//Reading sessionId length
 	var sessionIdLength = sessionBuf[byteIndex];
 	byteIndex++;
+	if (sessionIdLength > remainingBytes()){
+		throw new Error('malformed session request');
+	}
 	//Reading sessionId
 	var sessionId = sessionBuf.toString('utf8', byteIndex, byteIndex + sessionIdLength);
 	var sessionIdBuf = sessionBuf.slice(byteIndex, byteIndex + sessionIdLength);
 	byteIndex += sessionIdLength;
+
+	function remainingBytes(){
+		return sessionBuf.length - byteIndex;
+	}
 
 	return {username: username, usernameBuffer: usernameBuf, timestamp: timestamp, sessionId: sessionId, sessionIdBuffer: sessionIdBuf};
 }
@@ -638,7 +648,7 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 								assert(typeof HPKAReq.sessionExpiration || (typeof HPKAReq.sessionExpiration == 'number' && HPKAReq.sessionExpiration > 0), 'sessionExpiration should either be a undefined or a number');
 								var sessionExpiration = HPKAReq.sessionExpiration || 0;
 
-								sessionAgreement(HPKAReq, req, function(accepted, serverSetExpiration){
+								sessionAgreement(HPKAReq, req, res, function(accepted, serverSetExpiration){
 									if (accepted){
 										res.set('HPKA-Session-Expiration', serverSetExpiration || sessionExpiration);
 										res.send('Session created');
@@ -657,7 +667,7 @@ exports.expressMiddleware = function(loginCheck, registration, deletion, keyRota
 								var sessionId = HPKAReq.sessionId;
 								assert(typeof sessionId == 'string' && sessionId.length > 0, 'SessionId should be defined and non-empty');
 
-								sessionRevocation(HPKAReq, req, function(completed){
+								sessionRevocation(HPKAReq, req, res, function(completed){
 									if (completed){
 										res.send('SessionId revoked');
 									} else {
@@ -877,7 +887,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 								assert(typeof HPKAReq.sessionExpiration || (typeof HPKAReq.sessionExpiration == 'number' && HPKAReq.sessionExpiration > 0), 'sessionExpiration should either be a undefined or a number');
 								var sessionExpiration = HPKAReq.sessionExpiration || 0;
 
-								sessionAgreement(HPKAReq, req, function(accepted, serverSetExpiration){
+								sessionAgreement(HPKAReq, req, res, function(accepted, serverSetExpiration){
 									if (accepted){
 										var message = 'Session created';
 										res.writeHead(200, {
@@ -899,7 +909,7 @@ exports.httpMiddleware = function(requestHandler, loginCheck, registration, dele
 								var sessionId = HPKAReq.sessionId;
 								assert(typeof sessionId == 'string' && sessionId.length > 0, 'SessionId should be defined and non-empty');
 
-								sessionRevocation(HPKAReq, req, function(completed){
+								sessionRevocation(HPKAReq, req, res, function(completed){
 									if (completed){
 										var message = 'SessionId revoked';
 										res.writeHead(200, {'Content-Length': message.length});
