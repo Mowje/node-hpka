@@ -79,13 +79,15 @@ The module exposes 7 methods :
 	* req : the expressjs request object, in case you want to get more information about the client's request
 	* res : the expressjs response object, in case you want to respond to the client at this stage. You can choose not to use it and use the `callback` instead to let the intended route handler be called and produce the response.
 	* callback(isValid) : a callback function, to be called once the session verification in `sessionCheck` or completed (namely, to check that there is a user called with the value of `username` found in `sessionReq` and that he has registered the sessionId found in that request). To be called with a boolean as a sole parameter, indicating whether the session-authenticated request is valid or not.
-* sessionAgreement(HPKAReq, req, callback(Boolean, Number)) :
+* sessionAgreement(HPKAReq, req, res, callback(Boolean, Number)) :
 	* HPKAReq : the HPKAReq object, [as described below](https://github.com/Mowje/node-hpka#hpkareq-object). In this case, it contains the additional `sessionId` attribute. It can optionally contain a `sessionExpiration` value, that is user-provided wished expiration date (a Unix UTC Epoch, in seconds)
 	* req : the expressjs request object
+	* res : the expressjs response object, in case you want to respond to the client at this stage. You can choose not to use it and use the `callback` instead to let the intended route handler be called and produce the response.
 	* callback(isAccepted, serverSetExpiration) : a callback function to be called once the sessionId agreement is complete (regardless of success). The first parameter of this callback is a boolean indicating whether the sessionId was accepted or not (this is a mandatory parameter). The second parameter is optional; it is a Unix UTC Epoch (again, in seconds) indicating at what time the sessionId will expire. This value can either be the `sessionExpiration` provided by the user, or a server-imposed value.
-* sessionRevocation(HPKAReq, req, callback(Boolean)) :
+* sessionRevocation(HPKAReq, req, res, callback(Boolean)) :
 	* HPKAReq : the HPKAReq object, [as described below](https://github.com/Mowje/node-hpka#hpkareq-object). In this case, it contains the additional `sessionId` attribute.
 	* req : the expressjs request object
+	* res : the expressjs response object, in case you want to respond to the client at this stage. You can choose not to use it and use the `callback` instead to let the intended route handler be called and produce the response.
 	* callback(isRevoked) : a callback function, to be called once the revocation is complete (regardless of success). The only parameter of this callback is a boolean indicating whether the `sessionId` provided in this request has been revoked or not.
 
 Note that :
@@ -123,13 +125,15 @@ Note that :
 	* req : the [request](http://nodejs.org/api/http.html#http_http_incomingmessage) object, in case you want to get more information about the client's request
 	* res : the [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object, in case you want to respond to the client at this stage. You can choose not to use it and use the `callback` instead to let the intended request handler be called and produce the response.
 	* callback(isValid) : a callback function, to be called once the session verification in `sessionCheck` or completed (namely, to check that there is a user called with the value of `username` found in `sessionReq` and that he has registered the sessionId found in that request). To be called with a boolean as a sole parameter, indicating whether the session-authenticated request is valid or not.
-* sessionAgreement(HPKAReq, req, callback(Boolean, Number)) :
+* sessionAgreement(HPKAReq, req, res, callback(Boolean, Number)) :
 	* HPKAReq : the HPKAReq object, [as described below](https://github.com/Mowje/node-hpka#hpkareq-object). In this case, it contains the additional `sessionId` attribute. It can optionally contain a `sessionExpiration` value, that is user-provided wished expiration date (a Unix UTC Epoch, in seconds)
 	* req : the [request](http://nodejs.org/api/http.html#http_http_incomingmessage) object
+	* res : the expressjs response object, in case you want to respond to the client at this stage. You can choose not to use it and use the `callback` instead to let the intended route handler be called and produce the response.
 	* callback(isAccepted, serverSetExpiration) : a callback function to be called once the sessionId agreement is complete (regardless of success). The first parameter of this callback is a boolean indicating whether the sessionId was accepted or not (this is a mandatory parameter). The second parameter is optional; it is a Unix UTC Epoch (again, in seconds) indicating at what time the sessionId will expire. This value can either be the `sessionExpiration` provided by the user, or a server-imposed value.
-* sessionRevocation(HPKAReq, req, callback(Boolean)) :
+* sessionRevocation(HPKAReq, req, res, callback(Boolean)) :
 	* HPKAReq : the HPKAReq object, [as described below](https://github.com/Mowje/node-hpka#hpkareq-object). In this case, it contains the additional `sessionId` attribute.
 	* req : the [request](http://nodejs.org/api/http.html#http_http_incomingmessage) object
+	* res : the expressjs response object, in case you want to respond to the client at this stage. You can choose not to use it and use the `callback` instead to let the intended route handler be called and produce the response.
 	* callback(isRevoked) : a callback function, to be called once the revocation is complete (regardless of success). The only parameter of this callback is a boolean indicating whether the `sessionId` provided in this request has been revoked or not.
 
 ### Client methods
